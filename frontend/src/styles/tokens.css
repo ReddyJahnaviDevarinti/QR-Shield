@@ -1,0 +1,66 @@
+:root {
+  /* Surface & Background Tokens */
+  --color-bg-base: #0b0f17;
+  --color-surface-default: #111827;
+  --color-surface-raised: #182234;
+  --color-surface-overlay: #1e293b;
+
+  /* Border Tokens */
+  --color-border-subtle: #24334a;
+  --color-border-strong: #334766;
+
+  /* Typography / Text Tokens */
+  --color-text-primary: #f8fafc;
+  --color-text-secondary: #94a3b8;
+  --color-text-muted: #64748b;
+
+  /* Brand Accents */
+  --color-brand-primary: #2563eb;
+  --color-brand-hover: #3b82f6;
+  --color-brand-active: #1d4ed8;
+  --color-brand-subtle: rgba(37, 99, 235, 0.12);
+
+  /* Canonical Verification Status Tokens */
+  --color-status-verified: #10b981;
+  --color-status-verified-bg: rgba(16, 185, 129, 0.12);
+  --color-status-verified-border: #059669;
+
+  --color-status-mismatch: #ef4444;
+  --color-status-mismatch-bg: rgba(239, 68, 68, 0.12);
+  --color-status-mismatch-border: #dc2626;
+
+  --color-status-suspicious: #f59e0b;
+  --color-status-suspicious-bg: rgba(245, 158, 11, 0.12);
+  --color-status-suspicious-border: #d97706;
+
+  --color-status-unverified: #64748b;
+  --color-status-unverified-bg: rgba(100, 116, 139, 0.12);
+  --color-status-unverified-border: #475569;
+
+  --color-status-insufficient: #71717a;
+  --color-status-insufficient-bg: rgba(113, 113, 122, 0.12);
+  --color-status-insufficient-border: #52525b;
+
+  /* Fonts */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Spacing Grid (8pt baseline, 4pt micro) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  /* Focus & Elevation */
+  --focus-ring: 0 0 0 2px var(--color-bg-base), 0 0 0 4px var(--color-brand-hover);
+  --shadow-subtle: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
