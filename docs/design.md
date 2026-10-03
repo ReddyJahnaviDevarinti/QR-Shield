@@ -1,203 +1,203 @@
 # Design System Specification: QRShield AI
 
-Status: DRAFT  
-Last Updated: 2026-10-04  
-Owner: QRShield Project  
+Status: PRODUCTION-READY (FOUNDATION IMPLEMENTED)
+Last Updated: 2026-10-04
+Owner: QRShield Project
 
 ---
 
 ## 1. Visual Direction & Brand Personality
 
 ### 1.1 Visual Direction
-QRShield AI is designed as a serious, professional cybersecurity and payment verification platform. The interface balances high-density information display with technical clarity, drawing inspiration from modern defense consoles, network analyzers, and financial clearinghouse terminals.
+QRShield is an enterprise-grade cybersecurity and payment verification product. The interface balances high-density technical clarity with visual restraint, communicating **verification, evidence, trust, and clarity**.
 
 The aesthetic is **utilitarian, crisp, and high-contrast**:
 - Clean architectural geometry over soft playful bubbles.
-- Deep, low-fatigue slate surfaces over frivolous gradients.
+- Restrained dark slate surfaces over frivolous gradients.
 - Strict visual hierarchy prioritizing rapid threat discernment.
+- No purple brand accents, no neon glow, no AI robot avatars, and no sci-fi gimmicks.
 
-### 1.2 Brand Personality
-- **Authoritative**: Statements and classifications are grounded in verifiable technical facts.
-- **Objective**: Communicates findings without sensationalism, panic, or marketing hyperbole.
-- **Vigilant**: Highlights anomalies and discrepancies with surgical precision.
-- **Transparent**: Never hides the underlying methodology or creates "black box" claims.
+### 1.2 Brand Identity & Descriptor
+- **Product Name**: `QRShield`
+- **Professional Descriptor**: `Payment QR Verification`
+- **Voice**: Factual, evidence-grounded, restrained, and precise. No unsupported claims ("world's best", "revolutionary", "AI-powered future").
 
 ---
 
-## 2. Color Palette & Design Tokens
+## 2. Color System & Centralized Design Tokens
 
-The color system is built on a dark slate foundation with high-contrast neutral text and strict semantic status accents. **Purple gradients and neon glow effects are strictly prohibited.**
+The color system uses a disciplined dark palette defined in `frontend/src/styles/tokens.css`. All components derive their colors strictly from these CSS variables.
 
-```
-[Background: #0B0F17] ────> [Surface: #111827] ────> [Card: #182234] ────> [Border: #24334A]
-Text Primary: #F8FAFC | Text Muted: #64748B | Primary Accent: #2563EB
-```
-
-### 2.1 Neutral Foundation Tokens
+### 2.1 Surface & Neutral Foundation Tokens
 | Token Name | Hex Value | Semantic Purpose |
 | :--- | :--- | :--- |
-| `--color-bg-base` | `#0B0F17` | Canvas background (Deep Obsidian Slate) |
-| `--color-surface-default` | `#111827` | Primary surface for panels and toolbars |
-| `--color-surface-raised` | `#182234` | Elevated cards, inspect panels, table rows |
-| `--color-surface-overlay` | `#1E293B` | Modal dialogs, dropdowns, contextual popovers |
-| `--color-border-subtle` | `#24334A` | Default dividers, card boundaries |
-| `--color-border-strong` | `#334766` | Active input borders, focused component outlines |
-| `--color-text-primary` | `#F8FAFC` | Headings, primary metrics, active values |
-| `--color-text-secondary` | `#94A3B8` | Body copy, secondary descriptions, labels |
-| `--color-text-muted` | `#64748B` | Footers, disabled items, timestamps |
+| `--color-bg-base` | `#080C12` | Near-black canvas background |
+| `--color-bg-subtle` | `#0D1420` | Subtle background elevation |
+| `--color-surface-default` | `#111927` | Primary surface for cards, header, and panels |
+| `--color-surface-raised` | `#162132` | Elevated containers, table cells, inputs |
+| `--color-surface-overlay` | `#1C283D` | Dropdowns, dialog overlays, tooltips |
+| `--color-border-subtle` | `#243247` | Default structural 1px dividers and borders |
+| `--color-border-strong` | `#2B3A50` | Focused boundaries, active card borders |
+| `--color-border-focus` | `#60A5FA` | Accessible focus-visible ring indicator |
+| `--color-text-primary` | `#F5F7FA` | Primary headings, active values, high contrast |
+| `--color-text-secondary` | `#A8B4C5` | Body copy, secondary descriptions, labels |
+| `--color-text-muted` | `#718096` | Footers, disabled states, technical annotations |
 
-### 2.2 Brand Accent Tokens
+### 2.2 Primary Action & Interactive Tokens
 | Token Name | Hex Value | Semantic Purpose |
 | :--- | :--- | :--- |
-| `--color-brand-primary` | `#2563EB` | Primary action buttons, active navigation markers |
-| `--color-brand-hover` | `#3B82F6` | Interactive hover state for brand actions |
-| `--color-brand-active` | `#1D4ED8` | Pressed / selected state |
-| `--color-brand-subtle` | `rgba(37, 99, 235, 0.12)` | Selection highlight, active tab background |
+| `--color-brand-primary` | `#2563EB` | Solid deep blue for primary actions |
+| `--color-brand-hover` | `#3B82F6` | Electric blue hover state for primary controls |
+| `--color-brand-active` | `#1D4ED8` | Pressed / active brand state |
+| `--color-brand-focus` | `#60A5FA` | Focus outline and link accent |
+| `--color-brand-subtle` | `rgba(37, 99, 235, 0.12)` | Active navigation background tint |
 
-### 2.3 Semantic Status Tokens (Mandatory Classifications)
-Every status color must strictly correlate with one of the 5 canonical outcomes:
+### 2.3 Semantic Status System (5 Canonical Statuses)
+Every status color corresponds to exactly one of the five canonical outcomes. Each status includes text, outline icon, color, and accessible contrast:
 
-| Status Code | Base Hex | Background Pill Tint | Border Hex | Usage |
-| :--- | :--- | :--- | :--- | :--- |
-| `VERIFIED` | `#10B981` (Emerald) | `rgba(16, 185, 129, 0.12)` | `#059669` | Match confirmed; no tamper indicators |
-| `DESTINATION_MISMATCH` | `#EF4444` (Crimson) | `rgba(239, 68, 68, 0.12)` | `#DC2626` | Destination differs from registered record |
-| `SUSPICIOUS` | `#F59E0B` (Amber) | `rgba(245, 158, 11, 0.12)` | `#D97706` | Visual overlay or border anomaly detected |
-| `UNVERIFIED` | `#64748B` (Slate) | `rgba(100, 116, 139, 0.12)` | `#475569` | Valid QR, but merchant not in registry |
-| `INSUFFICIENT_EVIDENCE` | `#71717A` (Zinc) | `rgba(113, 113, 122, 0.12)` | `#52525B` | Blur, damage, or decode failure |
+| Status Code | Base Hex | Background Tint | Border Hex | Outline Icon | Non-Color Cue / Meaning |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `VERIFIED` | `#16A34A` | `rgba(22, 163, 74, 0.12)` | `#15803D` | `CheckCircle2` | Check icon; exact destination match confirmed |
+| `DESTINATION_MISMATCH` | `#DC2626` | `rgba(220, 38, 38, 0.12)` | `#B91C1C` | `XCircle` | X icon; payee VPA conflicts with registered target |
+| `SUSPICIOUS` | `#F59E0B` | `rgba(245, 158, 11, 0.12)` | `#D97706` | `AlertTriangle` | Triangle icon; physical sticker overlay/anomaly |
+| `UNVERIFIED` | `#A8B4C5` | `rgba(113, 128, 150, 0.14)` | `#4A5568` | `HelpCircle` | Help/question icon; readable target not registered |
+| `INSUFFICIENT_EVIDENCE`| `#94A3B8` | `rgba(100, 116, 139, 0.14)` | `#475569` | `Info` | Info icon; blur, damage, or decode failure |
 
 ---
 
 ## 3. Typography & Hierarchy
 
 ### 3.1 Font Families
-- **Interface & Content**: `Inter`, system-ui, -apple-system, sans-serif.
-- **Technical & Data**: `JetBrains Mono`, `ui-monospace`, monospace (mandatory for raw payloads, VPAs, URLs, hashes, and coordinates).
+- **Interface & Content**: `Inter`, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif.
+- **Technical & Data**: `JetBrains Mono`, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace.
+- Decorative display fonts and all-caps paragraphs are strictly prohibited. Uppercase is permitted only for compact status badges, category labels, and metadata.
 
-### 3.2 Type Scale
+### 3.2 Type Scale & Hierarchy
 | Role | Size | Weight | Line Height | Letter Spacing | Font Family |
 | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Display / Hero** | 32px (2.00rem) | 700 (Bold) | 1.20 | -0.025em | Inter |
 | **Page Title (H1)** | 28px (1.75rem) | 700 (Bold) | 1.25 | -0.025em | Inter |
 | **Section Header (H2)** | 20px (1.25rem) | 600 (Semibold) | 1.30 | -0.015em | Inter |
 | **Card Header (H3)** | 16px (1.00rem) | 600 (Semibold) | 1.40 | 0.000em | Inter |
 | **Body (Default)** | 14px (0.875rem) | 400 (Regular) | 1.50 | 0.000em | Inter |
-| **Body (Strong)** | 14px (0.875rem) | 600 (Semibold) | 1.50 | 0.000em | Inter |
-| **Code / Payload** | 13px (0.8125rem)| 400 (Regular) | 1.45 | 0.000em | JetBrains Mono |
-| **Caption / Meta** | 12px (0.75rem) | 500 (Medium) | 1.40 | +0.010em | Inter |
+| **Body Small** | 13px (0.8125rem)| 400 (Regular) | 1.50 | 0.000em | Inter |
+| **Label / Metadata** | 12px (0.75rem) | 500 (Medium) | 1.40 | +0.020em | Inter |
+| **Technical / Monospace**| 13px (0.8125rem)| 400 / 600 | 1.45 | 0.000em | JetBrains Mono |
 
 ---
 
-## 4. Spacing, Sizing & Grid
+## 4. Spacing System (8px Grid)
 
-The layout enforces an 8-point geometric grid with a 4-point micro-step:
+All layout dimensions, paddings, and margins enforce a strict 8-point geometric system:
 
 | Token | Dimension | Common Use |
 | :--- | :--- | :--- |
-| `--space-1` | 4px | Micro-padding, icon margins |
+| `--space-1` | 4px | Micro-padding, icon gaps |
 | `--space-2` | 8px | Button inline gaps, pill padding |
-| `--space-3` | 12px | Compact cell padding, input vertical padding |
-| `--space-4` | 16px | Card padding, stack spacing |
+| `--space-3` | 12px | Input vertical padding, compact card gaps |
+| `--space-4` | 16px | Standard card padding, stack spacing |
 | `--space-6` | 24px | Section gaps, grid gutters |
 | `--space-8` | 32px | Major layout block division |
+| `--space-10` | 40px | Hero padding |
 | `--space-12` | 48px | Page header spacing |
+| `--space-16` | 64px | Page bottom padding |
 
 ---
 
-## 5. Component Rules
+## 5. Corners & Elevation
 
-### 5.1 Buttons
-- **Shape**: Rectangular with restrained radius: `border-radius: 6px`.
-- **Height**: 36px (compact) or 40px (default).
+- **Modest Corner Radii**:
+  - `--radius-sm`: `6px` (inputs, badges, small buttons)
+  - `--radius-md`: `8px` (cards, panels, standard buttons)
+  - `--radius-lg`: `10px` (dropzones, complex modal panels)
+  - `--radius-xl`: `12px` (outer modal viewports)
+  - `--radius-pill`: `9999px` (reserved strictly for status badges and compact metadata tags)
+- **Elevation**:
+  - `--shadow-subtle`: `0 1px 3px rgba(0, 0, 0, 0.35)`
+  - `--shadow-panel`: `0 4px 12px rgba(0, 0, 0, 0.4)`
+- 1px structural borders (`var(--color-border-subtle)`) establish visual depth rather than heavy drop shadows.
+
+---
+
+## 6. Iconography Rules
+
+- **Library**: `lucide-react` (clean outline SVGs with 1.75px to 2.25px stroke width).
+- **Standardized Sizing**:
+  - `12px` - `14px`: Status badge inline icons, data row tags.
+  - `16px`: Buttons, card title badges.
+  - `18px`: Alerts, form helpers.
+  - `20px`: Empty state centers, action indicators.
+  - `24px` - `32px`: File dropzones, error banners.
+- **Zero Emojis**: Emojis are strictly prohibited anywhere in UI components, badges, or buttons.
+
+---
+
+## 7. Component System
+
+### 7.1 Buttons (`Button.tsx`)
+- **Sizes**:
+  - `sm`: 32px height, 12px horizontal padding, 13px font.
+  - `md`: 38px height, 16px horizontal padding, 14px font.
+  - `lg`: 44px height, 20px horizontal padding, 15px font.
 - **Variants**:
-  - `Primary`: Solid `#2563EB`, text `#FFFFFF`, subtle bottom border.
-  - `Secondary`: Surface `#182234`, border `1px solid #24334A`, text `#F8FAFC`.
-  - `Destructive`: Surface `rgba(239, 68, 68, 0.1)`, border `1px solid #DC2626`, text `#EF4444`.
-  - `Ghost`: Transparent background, hover tint `rgba(255, 255, 255, 0.06)`, text `#94A3B8`.
-- **Focus**: Visible outline `2px solid #3B82F6` with a `2px` offset.
-- **Prohibitions**: No bouncing animations, no multi-colored glow, no pills with full rounded circles (`border-radius: 9999px` is prohibited on standard buttons).
+  - `primary`: Solid `#2563EB`, text `#FFFFFF`.
+  - `secondary`: Neutral `#162132` with border `#243247`.
+  - `outline`: Transparent background with strong border.
+  - `danger`: Reserved for destructive actions (`#DC2626`).
+  - `ghost`: Transparent with subtle hover tint.
+- **Semantics**: Button text describes actions clearly ("Verify QR", "Register Destination", "Open Dashboard").
 
-### 5.2 Inputs & File Upload Dropzone
-- **Text Inputs**:
-  - Background: `#111827`, border: `1px solid #24334A`.
-  - Focus state: border `#3B82F6`, box-shadow `0 0 0 1px #3B82F6`.
-  - Payloads / VPAs must render in monospace font.
-- **File Upload Dropzone**:
-  - Perimeter: `2px dashed #334766`.
-  - Active Drag State: border `2px solid #3B82F6`, background `rgba(37, 99, 235, 0.04)`.
-  - Typography: Clear label (*"Upload or drag & drop QR image"*), supported formats (*"JPEG, PNG, WEBP up to 10MB"*).
-  - Prohibitions: No cartoonish cloud illustrations or floating arrows.
+### 7.2 Form Inputs (`Input.tsx`, `Select.tsx`)
+- Accessible form elements with associated `<label>`, helper text, error text, and keyboard focus states.
+- Monospace variant (`isMonospace`) for VPAs, transaction IDs, and merchant codes.
+- Controlled and uncontrolled `id` binding with `React.useId()`.
 
-### 5.3 Cards & Data Containers
-- Background: `#111827` or `#182234`.
-- Border: `1px solid #24334A`.
-- Border Radius: `6px` or `8px` max.
-- Shadows: Minimal, utilitarian elevation (`box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4)`).
-- Prohibitions: No excessive glassmorphism blur filters, no rounded cards $> 12\text{px}$.
+### 7.3 File Dropzone (`FileDropzone.tsx`)
+- Supports 7 distinct visual states:
+  - `idle`: Upload prompt with format disclosure ("PNG, JPG or WEBP", max 10MB).
+  - `hover`: Enhanced border on pointer proximity.
+  - `dragover`: Electric blue highlight and tint.
+  - `uploading`: Loading spinner with byte stream indication.
+  - `processing`: Analysis indicator.
+  - `success`: Green check with uploaded filename.
+  - `failure`: Mismatch error banner with format reminder.
+- Fully accessible via keyboard (`Enter` or `Space` to trigger file selection).
 
-### 5.4 Data Tables
-- Header: Background `#0B0F17`, text `#94A3B8`, uppercase 12px with 0.05em tracking.
-- Row Padding: Dense (`8px 12px`).
-- Cell Values: Monetary and VPA figures must use tabular numerals (`font-variant-numeric: tabular-nums`) in monospace.
-- Row Separator: `1px solid #24334A`.
+### 7.4 Content Containers (`Card.tsx`, `PageHeader.tsx`, `DataRow.tsx`, `Divider.tsx`)
+- **`Card`**: Standardized container with title, subtitle, badge, action slot, and subtle border.
+- **`PageHeader`**: Displays category badge, H1 title, subtitle, and responsive action bar.
+- **`DataRow`**: Monospace technical key-value rows with label, value, and annotation.
+- **`Divider`**: 1px structural separator with optional uppercase monospace label.
 
-### 5.5 Status Badges & Indicators
-- Badges must render as structured pills:
-  - Height: `24px`.
-  - Border radius: `4px`.
-  - Border: `1px solid [Status Border Hex]`.
-  - Content: 16px SVG icon + status label in uppercase bold monospace.
-  - Examples:
-    - `[ShieldCheckIcon] VERIFIED`
-    - `[AlertTriangleIcon] DESTINATION MISMATCH`
-    - `[LayersIcon] SUSPICIOUS`
-    - `[HelpCircleIcon] UNVERIFIED`
-    - `[AlertCircleIcon] INSUFFICIENT EVIDENCE`
+### 7.5 States & Feedback (`Alert.tsx`, `EmptyState.tsx`, `LoadingState.tsx`, `ErrorState.tsx`)
+- **`Alert`**: Categorized banners (`info`, `warning`, `error`, `success`) with semantic roles (`alert` or `status`).
+- **`EmptyState`**: Honest empty states ("No scan submitted.", "No trusted destinations registered yet.") without fake metrics.
+- **`LoadingState`**: Spinner or skeleton shimmer mode with accessible `aria-busy="true"`.
+- **`ErrorState`**: Diagnostic banner with failure description and retry button.
 
 ---
 
-## 6. Feedback, States & Error Handling
+## 8. Navigation & Responsive Behavior
 
-### 6.1 Loading States
-- Use clean, linear progress bars (`height: 2px`) or skeletal shimmer boxes in `#182234` with subtle pulse ($\le 1.5\text{s}$).
-- No playful bouncing spinners, confetti, or rotating 3D cubes.
+### 8.1 Header Navigation (`Header.tsx`)
+- **Desktop**:
+  - Left: QRShield brand mark (`ShieldCheck` icon) + compact `UI Foundation` indicator.
+  - Right: Navigation links (`Overview`, `Verify Scan`, `Dashboard`).
+  - Active Route: Distinct background tint (`var(--color-surface-raised)`) and border.
+- **Mobile**:
+  - Hamburger toggle (`Menu` / `X` icon).
+  - Slide-down drawer with full-width touch targets.
+  - No horizontal overflow under any viewport width (tested at 360px).
 
-### 6.2 Empty States
-- Consists of a simple technical SVG icon (24px, muted slate `#64748B`), a concise header (14px semibold), a single sentence of instruction, and an actionable button.
-- Never use AI-generated empty-state illustrations or whimsical cartoons.
-
-### 6.3 Error States
-- Errors display:
-  1. Formal Machine Code (`E_DECODE_FAILED`).
-  2. Clear diagnosis (*"Unable to detect standard finder patterns"*).
-  3. Actionable recovery step (*"Ensure the QR code is centered and free of heavy camera glare"*).
-
----
-
-## 7. Responsive Behavior & Breakpoints
-
-| Breakpoint | Range | Layout Strategy |
-| :--- | :--- | :--- |
-| **Mobile (`sm`)** | $360\text{px} - 639\text{px}$ | Single column layout; full-width buttons; camera viewfinder fills viewport width; collapsible navigation drawer. |
-| **Tablet (`md`)** | $640\text{px} - 1023\text{px}$ | Two-column split (Scanner/Uploader on left, live telemetry on right); compact top navigation bar. |
-| **Desktop (`lg`)** | $\ge 1024\text{px}$ | Multi-panel dashboard with persistent navigation rail; max layout container width capped at $1280\text{px}$. |
+### 8.2 Breakpoints
+- **Mobile (`<640px`)**: Single-column stacked layouts, full-width touch buttons, collapsible menu.
+- **Tablet (`640px - 1023px`)**: 2-column grids, horizontal nav links.
+- **Desktop (`>=1024px`)**: Multi-column console layout with 1200px max-width container.
 
 ---
 
-## 8. Iconography Rules
+## 9. Motion Standards & Reduced Motion
 
-- **Icon Family**: Clean, monoline SVG icons with 1.5px to 2px stroke width (e.g., Lucide Icons).
-- **Icon Sizing**: Strictly standardized at `16px` (inline/badges), `20px` (buttons/inputs), and `24px` (navigation/headers).
-- **Prohibitions**:
-  - **Zero Emoji Icons**: Emojis (🛡️, ⚠️, ❌, ✅, 🚀) are strictly forbidden in UI components, headers, buttons, and navigation.
-
----
-
-## 9. Motion & Animation Standards
-
-1. **Restrained & Functional**: Animations must only occur to provide state confirmation or navigation continuity.
-2. **Speed Limits**:
-   - Micro-interactions (hover, focus, button active): $\le 150\text{ms}$ `ease-out`.
-   - Structural transitions (drawer open, modal reveal, toast slide): $\le 200\text{ms}$ `cubic-bezier(0.16, 1, 0.3, 1)`.
-3. **Accessibility**:
-   - Must honor `@media (prefers-reduced-motion: reduce)` by disabling all transitional animations and displaying states immediately.
-4. **Prohibitions**:
-   - No cursor-follow effects, no bouncy spring damping, no scroll-jacking, no infinite floating keyframes.
+- **Transitions**: Constrained to subtle micro-interactions ($\le 150\text{ms}$ `ease-out`).
+- **No Heavy Physics**: No bounce effects, no cursor-follow, no parallax, no floating elements.
+- **Accessibility**: `@media (prefers-reduced-motion: reduce)` resets all transitions and animations to `0.01ms`.

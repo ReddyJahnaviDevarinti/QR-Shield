@@ -6,7 +6,7 @@ import { ErrorBoundary } from './app/ErrorBoundary';
 export const App: React.FC = () => {
   return (
     <ErrorBoundary>
-      <RouterProvider router={router} />
+      <RouterProvider router={router} future={{ v7_startTransition: true }} />
     </ErrorBoundary>
   );
 };

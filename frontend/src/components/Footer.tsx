@@ -17,7 +17,7 @@ export const Footer: React.FC = () => {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: 'var(--space-3)',
+            gap: 'var(--space-4)',
           }}
         >
           <div
@@ -26,10 +26,10 @@ export const Footer: React.FC = () => {
               justifyContent: 'space-between',
               alignItems: 'center',
               flexWrap: 'wrap',
-              gap: '12px',
+              gap: 'var(--space-3)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
               <span
                 style={{
                   fontWeight: 600,
@@ -37,21 +37,26 @@ export const Footer: React.FC = () => {
                   color: 'var(--color-text-primary)',
                 }}
               >
-                {APP_NAME} AI
+                {APP_NAME}
               </span>
-              <span style={{ color: 'var(--color-text-muted)', fontSize: '0.75rem' }}>
-                Physical QR Tamper & Payment Destination Verification
+              <span
+                style={{
+                  color: 'var(--color-text-muted)',
+                  fontSize: '0.75rem',
+                }}
+              >
+                — Payment QR Verification
               </span>
             </div>
 
             <div
               style={{
                 fontFamily: 'var(--font-mono)',
-                fontSize: '0.75rem',
+                fontSize: '0.6875rem',
                 color: 'var(--color-text-muted)',
               }}
             >
-              Architecture: React + Fastify + Supabase + Gemini
+              UI Foundation Phase
             </div>
           </div>
 
@@ -59,15 +64,15 @@ export const Footer: React.FC = () => {
             style={{
               fontSize: '0.75rem',
               color: 'var(--color-text-muted)',
-              maxWidth: '800px',
-              lineHeight: 1.4,
+              maxWidth: '820px',
+              lineHeight: 1.5,
             }}
           >
-            <strong>Operational Notice:</strong> QRShield is a verification-assistance
-            system. It does not have access to private banking ledgers, does not
-            independently identify bank account owners, and does not process payments.
-            Verification is based on deterministic destination comparison and physical
-            reference analysis against registered merchant profiles.
+            <strong>Operational Notice:</strong> QRShield compares scanned payment
+            destinations with trusted merchant registrations and reports evidence-based
+            verification results. It does not have access to private banking ledgers, does
+            not independently identify bank account owners, and does not process financial
+            transactions.
           </p>
 
           <div
@@ -76,16 +81,16 @@ export const Footer: React.FC = () => {
               paddingTop: 'var(--space-3)',
               display: 'flex',
               justifyContent: 'space-between',
-              fontSize: '0.75rem',
+              fontSize: '0.6875rem',
               color: 'var(--color-text-muted)',
               flexWrap: 'wrap',
-              gap: '8px',
+              gap: 'var(--space-2)',
             }}
           >
+            <span>&copy; {new Date().getFullYear()} QRShield Project.</span>
             <span>
-              &copy; {new Date().getFullYear()} QRShield Project. All rights reserved.
+              Deterministic verification + reference physical anomaly inspection
             </span>
-            <span>Status: Phase 0 Foundation Complete</span>
           </div>
         </div>
       </div>

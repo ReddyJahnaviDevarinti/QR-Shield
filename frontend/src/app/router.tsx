@@ -5,31 +5,38 @@ import { VerifyPage } from '../pages/VerifyPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
-export const router = createBrowserRouter([
+export const router = createBrowserRouter(
+  [
+    {
+      path: '/',
+      element: <RootLayout />,
+      children: [
+        {
+          index: true,
+          element: <HomePage />,
+        },
+        {
+          path: 'verify',
+          element: <VerifyPage />,
+        },
+        {
+          path: 'dashboard',
+          element: <DashboardPage />,
+        },
+        {
+          path: '404',
+          element: <NotFoundPage />,
+        },
+        {
+          path: '*',
+          element: <NotFoundPage />,
+        },
+      ],
+    },
+  ],
   {
-    path: '/',
-    element: <RootLayout />,
-    children: [
-      {
-        index: true,
-        element: <HomePage />,
-      },
-      {
-        path: 'verify',
-        element: <VerifyPage />,
-      },
-      {
-        path: 'dashboard',
-        element: <DashboardPage />,
-      },
-      {
-        path: '404',
-        element: <NotFoundPage />,
-      },
-      {
-        path: '*',
-        element: <NotFoundPage />,
-      },
-    ],
+    future: {
+      v7_relativeSplatPath: true,
+    },
   },
-]);
+);

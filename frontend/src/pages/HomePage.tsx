@@ -1,10 +1,22 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
-import { APP_MISSION, STATUS_DEFINITIONS } from '../lib/constants';
+import { useNavigate } from 'react-router-dom';
+import {
+  ShieldCheck,
+  ArrowRight,
+  LayoutDashboard,
+  Cpu,
+  FileCheck,
+  Eye,
+} from 'lucide-react';
+import { Button } from '../components/Button';
+import { Card } from '../components/Card';
 import { StatusBadge } from '../components/StatusBadge';
 import { VerificationStatus } from '../types';
+import { STATUS_DEFINITIONS } from '../lib/constants';
 
 export const HomePage: React.FC = () => {
+  const navigate = useNavigate();
+
   const statusKeys: VerificationStatus[] = [
     'VERIFIED',
     'DESTINATION_MISMATCH',
@@ -15,7 +27,7 @@ export const HomePage: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
-      {/* Product Hero / Technical Overview */}
+      {/* First Viewport: Primary Product Entry Point */}
       <section
         className="card"
         style={{
@@ -23,76 +35,97 @@ export const HomePage: React.FC = () => {
           flexDirection: 'column',
           gap: 'var(--space-4)',
           borderLeft: '4px solid var(--color-brand-primary)',
+          padding: 'var(--space-8) var(--space-6)',
         }}
       >
-        <span
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+          <ShieldCheck
+            size={18}
+            strokeWidth={2}
+            style={{ color: 'var(--color-brand-focus)' }}
+            aria-hidden="true"
+          />
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '0.6875rem',
+              color: 'var(--color-brand-focus)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+            }}
+          >
+            Payment QR Verification
+          </span>
+        </div>
+
+        <h1
           style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '0.75rem',
-            color: 'var(--color-brand-hover)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
+            fontSize: '2rem',
+            lineHeight: 1.2,
+            letterSpacing: '-0.025em',
+            maxWidth: '820px',
           }}
         >
-          Verification Assistance System
-        </span>
+          Verify that a payment QR matches a trusted registered destination.
+        </h1>
 
-        <h1>{APP_MISSION}</h1>
-
-        <p style={{ maxWidth: '850px', fontSize: '1rem', lineHeight: 1.6 }}>
-          Physical QR codes deployed at counters, kiosks, and storefronts can be altered
-          or covered with adhesive stickers that redirect payments to unauthorized
-          accounts. QRShield AI provides a deterministic verification workflow to confirm
-          that an uploaded or captured QR code targets the registered merchant
-          destination.
+        <p
+          style={{
+            maxWidth: '780px',
+            fontSize: '1rem',
+            lineHeight: 1.6,
+            color: 'var(--color-text-secondary)',
+          }}
+        >
+          QRShield compares the scanned payment destination with a trusted merchant
+          registration and reports evidence-based verification results. It identifies
+          destination mismatches, unverified targets, and physical sticker anomalies.
         </p>
 
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '8px' }}>
-          <Link
-            to="/verify"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '40px',
-              padding: '0 20px',
-              backgroundColor: 'var(--color-brand-primary)',
-              color: '#ffffff',
-              borderRadius: 'var(--radius-md)',
-              fontWeight: 500,
-              fontSize: '0.875rem',
-              textDecoration: 'none',
-            }}
+        {/* Primary and Secondary Actions */}
+        <div
+          style={{
+            display: 'flex',
+            gap: 'var(--space-3)',
+            flexWrap: 'wrap',
+            marginTop: 'var(--space-2)',
+          }}
+        >
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => navigate('/verify')}
+            icon={<ArrowRight size={16} />}
+            iconPosition="right"
           >
-            Launch Verification Console
-          </Link>
-          <Link
-            to="/dashboard"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '40px',
-              padding: '0 20px',
-              backgroundColor: 'var(--color-surface-raised)',
-              color: 'var(--color-text-primary)',
-              border: '1px solid var(--color-border-subtle)',
-              borderRadius: 'var(--radius-md)',
-              fontWeight: 500,
-              fontSize: '0.875rem',
-              textDecoration: 'none',
-            }}
+            Verify a QR
+          </Button>
+
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => navigate('/dashboard')}
+            icon={<LayoutDashboard size={16} />}
           >
-            Merchant Registry View
-          </Link>
+            Open Dashboard
+          </Button>
         </div>
       </section>
 
-      {/* Technical Workflow Pillars */}
+      {/* Compact Product Explanation Section */}
       <section
         style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
       >
-        <h2>Verification Mechanism</h2>
+        <div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>
+            Verification Architecture
+          </h2>
+          <p style={{ marginTop: '2px', color: 'var(--color-text-muted)' }}>
+            Evidence-oriented verification process across three deterministic inspection
+            stages.
+          </p>
+        </div>
+
         <div
           style={{
             display: 'grid',
@@ -100,50 +133,80 @@ export const HomePage: React.FC = () => {
             gap: 'var(--space-4)',
           }}
         >
-          <div className="card">
-            <h3 style={{ marginBottom: '8px' }}>1. Deterministic Payload Extraction</h3>
-            <p>
-              Scans are decoded using mathematical QR matrix detection. Payment URIs (such
-              as standard UPI strings) are parsed into normalized targets (VPA, payee
-              name, amount, merchant category code).
+          <Card
+            title="1. Deterministic Payload Extraction"
+            badge={
+              <Cpu
+                size={16}
+                strokeWidth={1.75}
+                style={{ color: 'var(--color-text-muted)' }}
+                aria-hidden="true"
+              />
+            }
+          >
+            <p style={{ fontSize: '0.8125rem', lineHeight: 1.5 }}>
+              QR matrices are extracted and decoded into normalized payment URIs (UPI
+              strings). Core fields including payee VPA, payee name, transaction amount,
+              and merchant category codes are isolated without heuristic speculation.
             </p>
-          </div>
+          </Card>
 
-          <div className="card">
-            <h3 style={{ marginBottom: '8px' }}>2. Destination Comparison</h3>
-            <p>
-              The extracted payment address is checked against the registered merchant
-              profile in the database. Exact string equality determines whether the
-              scanned destination matches or conflicts with the merchant record.
+          <Card
+            title="2. Destination Comparison"
+            badge={
+              <FileCheck
+                size={16}
+                strokeWidth={1.75}
+                style={{ color: 'var(--color-text-muted)' }}
+                aria-hidden="true"
+              />
+            }
+          >
+            <p style={{ fontSize: '0.8125rem', lineHeight: 1.5 }}>
+              Extracted payment addresses are evaluated against the merchant’s registered
+              profile. Direct string parity confirms authorization, or triggers an
+              immediate destination mismatch alert before payment execution.
             </p>
-          </div>
+          </Card>
 
-          <div className="card">
-            <h3 style={{ marginBottom: '8px' }}>3. Visual Anomaly Indicators</h3>
-            <p>
-              When a baseline reference image exists, lightweight image difference checks
-              evaluate the physical matrix for sticker boundaries, overlay borders, and
-              structural deviation.
+          <Card
+            title="3. Physical Anomaly Indicators"
+            badge={
+              <Eye
+                size={16}
+                strokeWidth={1.75}
+                style={{ color: 'var(--color-text-muted)' }}
+                aria-hidden="true"
+              />
+            }
+          >
+            <p style={{ fontSize: '0.8125rem', lineHeight: 1.5 }}>
+              When a baseline reference image exists in the registry, comparison
+              inspection checks for physical sticker overlays, border misalignments, and
+              structural matrix distortions indicative of physical tampering.
             </p>
-          </div>
+          </Card>
         </div>
       </section>
 
-      {/* Canonical Status Classifications */}
+      {/* Canonical Status System Overview */}
       <section
         style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
       >
-        <h2>Canonical Status Classifications</h2>
-        <p>
-          QRShield evaluates evidence strictly and outputs exactly one of five canonical
-          statuses. The system never outputs unsupported fraud claims.
-        </p>
+        <div>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>
+            Status Classification System
+          </h2>
+          <p style={{ marginTop: '2px', color: 'var(--color-text-muted)' }}>
+            Every verification query resolves into exactly one of five canonical statuses.
+          </p>
+        </div>
 
         <div
           style={{
             display: 'flex',
             flexDirection: 'column',
-            gap: 'var(--space-3)',
+            gap: 'var(--space-2)',
           }}
         >
           {statusKeys.map((status) => {
@@ -151,24 +214,29 @@ export const HomePage: React.FC = () => {
             return (
               <div
                 key={status}
-                className="card"
+                className="panel"
                 style={{
                   display: 'flex',
-                  alignItems: 'flex-start',
+                  alignItems: 'center',
                   justifyContent: 'space-between',
-                  gap: '16px',
+                  gap: 'var(--space-4)',
                   flexWrap: 'wrap',
+                  padding: 'var(--space-3) var(--space-4)',
                 }}
               >
                 <div style={{ flex: '0 0 auto' }}>
                   <StatusBadge status={status} />
                 </div>
-                <div style={{ flex: '1 1 300px' }}>
-                  <p
-                    style={{ color: 'var(--color-text-secondary)', fontSize: '0.875rem' }}
+                <div style={{ flex: '1 1 320px' }}>
+                  <span
+                    style={{
+                      color: 'var(--color-text-secondary)',
+                      fontSize: '0.8125rem',
+                      lineHeight: 1.45,
+                    }}
                   >
                     {def.description}
-                  </p>
+                  </span>
                 </div>
               </div>
             );

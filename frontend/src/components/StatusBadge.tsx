@@ -1,52 +1,61 @@
 import React from 'react';
+import { CheckCircle2, AlertTriangle, XCircle, HelpCircle, Info } from 'lucide-react';
 import { VerificationStatus } from '../types';
 
 interface StatusBadgeProps {
   status: VerificationStatus;
+  size?: 'sm' | 'md';
 }
 
-export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
-  const getStatusStyles = (s: VerificationStatus) => {
+export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, size = 'md' }) => {
+  const getStatusConfig = (s: VerificationStatus) => {
     switch (s) {
       case 'VERIFIED':
         return {
-          color: 'var(--color-status-verified)',
-          backgroundColor: 'var(--color-status-verified-bg)',
-          borderColor: 'var(--color-status-verified-border)',
           label: 'VERIFIED',
+          color: 'var(--color-status-verified)',
+          bg: 'var(--color-status-verified-bg)',
+          border: 'var(--color-status-verified-border)',
+          Icon: CheckCircle2,
         };
       case 'DESTINATION_MISMATCH':
         return {
-          color: 'var(--color-status-mismatch)',
-          backgroundColor: 'var(--color-status-mismatch-bg)',
-          borderColor: 'var(--color-status-mismatch-border)',
           label: 'DESTINATION MISMATCH',
+          color: 'var(--color-status-mismatch)',
+          bg: 'var(--color-status-mismatch-bg)',
+          border: 'var(--color-status-mismatch-border)',
+          Icon: XCircle,
         };
       case 'SUSPICIOUS':
         return {
-          color: 'var(--color-status-suspicious)',
-          backgroundColor: 'var(--color-status-suspicious-bg)',
-          borderColor: 'var(--color-status-suspicious-border)',
           label: 'SUSPICIOUS',
+          color: 'var(--color-status-suspicious)',
+          bg: 'var(--color-status-suspicious-bg)',
+          border: 'var(--color-status-suspicious-border)',
+          Icon: AlertTriangle,
         };
       case 'UNVERIFIED':
         return {
-          color: 'var(--color-status-unverified)',
-          backgroundColor: 'var(--color-status-unverified-bg)',
-          borderColor: 'var(--color-status-unverified-border)',
           label: 'UNVERIFIED',
+          color: 'var(--color-status-unverified)',
+          bg: 'var(--color-status-unverified-bg)',
+          border: 'var(--color-status-unverified-border)',
+          Icon: HelpCircle,
         };
       case 'INSUFFICIENT_EVIDENCE':
         return {
-          color: 'var(--color-status-insufficient)',
-          backgroundColor: 'var(--color-status-insufficient-bg)',
-          borderColor: 'var(--color-status-insufficient-border)',
           label: 'INSUFFICIENT EVIDENCE',
+          color: 'var(--color-status-insufficient)',
+          bg: 'var(--color-status-insufficient-bg)',
+          border: 'var(--color-status-insufficient-border)',
+          Icon: Info,
         };
     }
   };
 
-  const current = getStatusStyles(status);
+  const config = getStatusConfig(status);
+  const IconComponent = config.Icon;
+  const isSm = size === 'sm';
 
   return (
     <span
@@ -54,29 +63,23 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
         display: 'inline-flex',
         alignItems: 'center',
         gap: '6px',
-        height: '24px',
-        padding: '0 8px',
+        height: isSm ? '20px' : '24px',
+        padding: isSm ? '0 6px' : '0 8px',
         borderRadius: 'var(--radius-sm)',
-        fontSize: '0.75rem',
+        fontSize: isSm ? '0.6875rem' : '0.75rem',
         fontFamily: 'var(--font-mono)',
         fontWeight: 600,
-        letterSpacing: '0.05em',
-        border: `1px solid ${current.borderColor}`,
-        backgroundColor: current.backgroundColor,
-        color: current.color,
+        letterSpacing: '0.04em',
+        border: `1px solid ${config.border}`,
+        backgroundColor: config.bg,
+        color: config.color,
+        whiteSpace: 'nowrap',
       }}
       role="status"
+      aria-label={`Status: ${config.label}`}
     >
-      <span
-        style={{
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          backgroundColor: current.color,
-        }}
-        aria-hidden="true"
-      />
-      {current.label}
+      <IconComponent size={isSm ? 12 : 14} strokeWidth={2.25} aria-hidden="true" />
+      <span>{config.label}</span>
     </span>
   );
 };
