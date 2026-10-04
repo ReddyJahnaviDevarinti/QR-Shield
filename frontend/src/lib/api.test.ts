@@ -65,7 +65,7 @@ describe('Frontend API Client (verifyQr)', () => {
 
   it('1. forms multipart request correctly with image field and no manual Content-Type', async () => {
     let capturedUrl = '';
-    let capturedOptions: any = null;
+    let capturedOptions: RequestInit | undefined = undefined;
 
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
       capturedUrl = String(url);
@@ -80,13 +80,14 @@ describe('Frontend API Client (verifyQr)', () => {
     const result = await verifyQr(file, { merchantId: 'merch-42' });
 
     expect(capturedUrl).toContain('/api/v1/verify');
-    expect(capturedOptions?.method).toBe('POST');
+    const options = capturedOptions as unknown as RequestInit;
+    expect(options.method).toBe('POST');
     // Headers must NOT manually define Content-Type (boundary handled by browser)
     expect(
-      (capturedOptions?.headers as Record<string, string>)?.['Content-Type'],
+      (options.headers as Record<string, string> | undefined)?.['Content-Type'],
     ).toBeUndefined();
 
-    const body = capturedOptions?.body as FormData;
+    const body = options.body as FormData;
     expect(body).toBeInstanceOf(FormData);
     expect(body.get('image')).toBeDefined();
     expect(body.get('merchant_id')).toBe('merch-42');

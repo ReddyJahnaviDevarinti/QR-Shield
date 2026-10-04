@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ShieldCheck, Menu, X } from 'lucide-react';
 import { APP_NAME, NAV_LINKS } from '../lib/constants';
+import { useAuth } from '../context/AuthContext';
 
 export const Header: React.FC = () => {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { user, merchant, signOut } = useAuth();
 
   return (
     <header
@@ -131,6 +133,68 @@ export const Header: React.FC = () => {
                 </li>
               );
             })}
+
+            {/* Auth Action */}
+            <li style={{ marginLeft: 'var(--space-2)' }}>
+              {user ? (
+                <div
+                  style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--color-text-muted)',
+                      maxWidth: '140px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={user.email || undefined}
+                  >
+                    {merchant?.business_name || user.email}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => signOut()}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      padding: '4px 10px',
+                      fontSize: '0.75rem',
+                      fontWeight: 500,
+                      color: 'var(--color-text-secondary)',
+                      backgroundColor: 'transparent',
+                      border: '1px solid var(--color-border-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                      transition: 'all 150ms ease',
+                    }}
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              ) : (
+                <Link
+                  to="/login"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '6px 12px',
+                    fontSize: '0.8125rem',
+                    fontWeight: 600,
+                    color: 'var(--color-brand-primary)',
+                    backgroundColor: 'var(--color-surface-raised)',
+                    border: '1px solid var(--color-border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    textDecoration: 'none',
+                    transition: 'all 150ms ease',
+                  }}
+                >
+                  Sign In
+                </Link>
+              )}
+            </li>
           </ul>
         </nav>
 
@@ -204,6 +268,80 @@ export const Header: React.FC = () => {
                 </li>
               );
             })}
+            {user ? (
+              <li
+                style={{
+                  paddingTop: 'var(--space-2)',
+                  borderTop: '1px solid var(--color-border-subtle)',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 'var(--space-2)',
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: '0.75rem',
+                      fontFamily: 'var(--font-mono)',
+                      color: 'var(--color-text-muted)',
+                    }}
+                  >
+                    Signed in as: {merchant?.business_name || user.email}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      signOut();
+                      setMobileMenuOpen(false);
+                    }}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      padding: '8px 12px',
+                      fontSize: '0.875rem',
+                      fontWeight: 500,
+                      color: 'var(--color-text-secondary)',
+                      backgroundColor: 'transparent',
+                      border: '1px solid var(--color-border-subtle)',
+                      borderRadius: 'var(--radius-sm)',
+                      cursor: 'pointer',
+                      textAlign: 'center',
+                    }}
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              </li>
+            ) : (
+              <li
+                style={{
+                  paddingTop: 'var(--space-2)',
+                  borderTop: '1px solid var(--color-border-subtle)',
+                }}
+              >
+                <Link
+                  to="/login"
+                  onClick={() => setMobileMenuOpen(false)}
+                  style={{
+                    display: 'block',
+                    padding: '8px 12px',
+                    fontSize: '0.875rem',
+                    fontWeight: 600,
+                    color: 'var(--color-brand-primary)',
+                    backgroundColor: 'var(--color-surface-raised)',
+                    border: '1px solid var(--color-border-subtle)',
+                    borderRadius: 'var(--radius-sm)',
+                    textAlign: 'center',
+                    textDecoration: 'none',
+                  }}
+                >
+                  Sign In
+                </Link>
+              </li>
+            )}
           </ul>
         </div>
       )}

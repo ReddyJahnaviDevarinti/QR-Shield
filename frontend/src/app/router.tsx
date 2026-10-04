@@ -3,7 +3,9 @@ import { RootLayout } from '../layouts/RootLayout';
 import { HomePage } from '../pages/HomePage';
 import { VerifyPage } from '../pages/VerifyPage';
 import { DashboardPage } from '../pages/DashboardPage';
+import { AuthPage } from '../pages/AuthPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { ProtectedRoute } from '../components/ProtectedRoute';
 
 export const router = createBrowserRouter(
   [
@@ -20,8 +22,20 @@ export const router = createBrowserRouter(
           element: <VerifyPage />,
         },
         {
+          path: 'login',
+          element: <AuthPage />,
+        },
+        {
+          path: 'auth',
+          element: <AuthPage />,
+        },
+        {
           path: 'dashboard',
-          element: <DashboardPage />,
+          element: (
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          ),
         },
         {
           path: '404',

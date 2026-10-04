@@ -26,6 +26,7 @@ import { DataRow } from '../components/DataRow';
 import { Alert } from '../components/Alert';
 import { LoadingState } from '../components/LoadingState';
 import { verifyQr, VerifySuccessResponse, ApiClientError } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 
 function formatRecommendation(rec: string): string {
   switch (rec) {
@@ -45,6 +46,7 @@ function formatRecommendation(rec: string): string {
 }
 
 export const VerifyPage: React.FC = () => {
+  const { merchant } = useAuth();
   const [merchantId, setMerchantId] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -134,15 +136,56 @@ export const VerifyPage: React.FC = () => {
               style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}
             >
               {/* Optional Merchant ID targeting */}
-              <Input
-                label="Merchant Reference Identifier (Optional)"
-                placeholder="e.g., 51bc512c-7945-4404-bd24-4316ce924daa"
-                value={merchantId}
-                onChange={(e) => setMerchantId(e.target.value)}
-                helperText="If specified, verifies parity against this merchant's registered destination."
-                isMonospace
-                disabled={isLoading}
-              />
+              <div>
+                <Input
+                  label="Merchant Reference Identifier (Optional)"
+                  placeholder="e.g., a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  value={merchantId}
+                  onChange={(e) => setMerchantId(e.target.value)}
+                  helperText="If specified, verifies parity against this merchant's registered destination."
+                  isMonospace
+                  disabled={isLoading}
+                />
+                {merchant && (
+                  <div
+                    style={{
+                      marginTop: 'var(--space-2)',
+                      padding: '6px 10px',
+                      backgroundColor: 'var(--color-surface-raised)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-border-subtle)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    <span style={{ color: 'var(--color-text-secondary)' }}>
+                      Active Profile: <strong>{merchant.business_name}</strong>
+                    </span>
+                    {merchantId === merchant.id ? (
+                      <span
+                        style={{
+                          color: 'var(--color-status-verified)',
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: '0.6875rem',
+                        }}
+                      >
+                        MATCHED
+                      </span>
+                    ) : (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setMerchantId(merchant.id)}
+                        disabled={isLoading}
+                      >
+                        Use My ID
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Drag and Drop Zone */}
               <div

@@ -51,13 +51,37 @@ export interface MerchantProfile {
 }
 
 /**
- * Payment Destination (Planned)
+ * Supabase Merchants Table Record
+ */
+export interface MerchantRecord {
+  id: string;
+  user_id: string;
+  business_name: string;
+  registration_number: string | null;
+  contact_email: string | null;
+  created_at: string;
+}
+
+/**
+ * Payment Destination
  */
 export interface PaymentDestination {
   id: string;
   merchantId: string;
-  destinationType: 'UPI_VPA' | 'URL';
+  destinationType: 'VPA' | 'URL' | 'ACCOUNT';
   destinationValue: string;
   isActive: boolean;
   registeredAt: string;
+}
+
+/**
+ * Supabase Payment Destinations Table Record
+ */
+export interface PaymentDestinationRecord {
+  id: string;
+  merchant_id: string;
+  destination_type: 'VPA' | 'URL' | 'ACCOUNT';
+  destination_value: string;
+  is_active: boolean;
+  registered_at: string;
 }

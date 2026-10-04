@@ -268,9 +268,34 @@ The following items and components have been implemented, verified, and locked i
     - Backend `npm run build`, `npm run lint`, `npm run format:check`, and all 202 backend tests across 9 suites pass with zero regressions.
     - Real local end-to-end integration verified via live HTTP POST from `http://localhost:5173` origin returning HTTP 200 with `VERIFIED` and `DESTINATION_MISMATCH` canonical states against live backend and Supabase registry.
 
+- **Prompt 020 Real Merchant Authentication, Dashboard, and Trusted Destination Registration (`frontend/`)**:
+  - Implemented real Supabase Auth session management and state layer (`frontend/src/context/AuthContext.tsx`):
+    - Reactive `onAuthStateChange` listener managing session, user, profile, and payment destinations.
+    - Full authentication methods: `signIn(email, password)`, `signUp(email, password)`, `signOut()`.
+    - Protected session initialization ensuring no flickering of unauthenticated states during initial load.
+  - Implemented Authentication UI (`frontend/src/pages/AuthPage.tsx`):
+    - Clean Sign In and Sign Up views with toggle action.
+    - Controlled email, password, and confirm password fields with deterministic client-side validation.
+    - Visible error alerts for invalid credentials, weak passwords, and password mismatches.
+    - Zero custom password tables; credentials owned strictly by Supabase Auth.
+  - Implemented Route Guard & Navigation (`frontend/src/components/ProtectedRoute.tsx`, `frontend/src/app/router.tsx`):
+    - Protected `/dashboard` route redirecting unauthenticated users to `/login`.
+    - Preserved public routes (`/`, `/verify`, `*`).
+    - Added auth-aware navigation in `Header.tsx` displaying merchant identity, direct sign-out action, and sign-in link.
+  - Implemented Protected Merchant Dashboard (`frontend/src/pages/DashboardPage.tsx`):
+    - Authenticated user's merchant profile and trusted destinations loaded strictly under RLS policies (`auth.uid() = user_id`).
+    - Merchant Onboarding state: prompts new authenticated users to register business name when no profile exists; prevents duplicate profile creation.
+    - Trusted Destination Registration & Management: registers destinations (`VPA`, `URL`, `ACCOUNT`) in `payment_destinations` table associated with merchant ID; provides in-place active/inactive toggling.
+    - Honest empty states for reference QR storage (Phase 3) and verification audit history (Phase 10) with zero fake metrics or fake testimonials.
+    - Verified context helper in `VerifyPage.tsx` allowing signed-in merchants to populate their merchant ID for local testing without breaking anonymous verification or hardcoding test UUIDs.
+  - Security & RLS Compliance (`frontend/src/security.test.ts`):
+    - Verified zero hard-coded demo merchant UUIDs (`51bc512c-7945-4404-bd24-4316ce924daa`) in frontend production source code.
+    - Verified zero backend secrets or Supabase service role keys (`SUPABASE_SECRET_KEY`) present in frontend source.
+  - Automated Tests: Added 14 new frontend tests (2 in `security.test.ts`, 4 in `AuthPage.test.tsx`, 8 in `DashboardPage.test.tsx`). Total frontend test suite: 29 tests passing across 5 test suites.
+  - Verified full 14-step live Supabase manual flow against real Supabase instance: confirmed sign-in, profile insertion under RLS, destination registration, destination toggle, reload persistence, unauthenticated RLS query prevention (0 records returned), and persistent re-authentication.
+
 ### Not Completed (Explicitly Pending Future Phases)
-- Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
-- Dashboard Shell & Backend Persistence Integration (Phase 2)
+- Reference QR Storage Integration & Upload (Phase 3)
 - Merchant Admin Registry Endpoints (Phase 3)
 - Calibrated Risk Engine (Phase 7)
 - Sample Lab Test Harness (Phase 9)
@@ -461,14 +486,15 @@ QR-Shield/
 
 The following checks and validations were executed locally and passed with zero errors:
 
-1. **Frontend Vitest Test Suite**: `npm test` (`vitest run`) in `frontend/` passed 15 tests across 2 suites (`src/lib/api.test.ts`, `src/pages/VerifyPage.test.tsx`).
-2. **Frontend TypeScript Compilation & Build**: `npm run build` (`tsc -b && vite build`) completed with exit code 0 (`dist/` compiled cleanly: 1932 modules transformed, 277.84 kB bundle).
+1. **Frontend Vitest Test Suite**: `npm test` (`vitest run`) in `frontend/` passed all 29 tests across 5 suites (`src/security.test.ts`, `src/lib/api.test.ts`, `src/pages/AuthPage.test.tsx`, `src/pages/VerifyPage.test.tsx`, `src/pages/DashboardPage.test.tsx`).
+2. **Frontend TypeScript Compilation & Build**: `npm run build` (`tsc -b && vite build`) completed with exit code 0 (`dist/` compiled cleanly: 1980 modules transformed).
 3. **Frontend Linting Check**: `npm run lint` (`eslint .`) completed with exit code 0 (zero errors, zero warnings).
 4. **Frontend Code Formatting Check**: `npm run format:check` (`prettier --check "src/**/*.{ts,tsx,css}"`) completed with exit code 0.
 5. **Backend Vitest Test Suite**: `npm test` (`vitest run`) in `backend/` passed all 202 tests across 9 test suites with zero regressions.
 6. **Backend TypeScript Compilation & Build**: `npm run build` (`tsc`) completed with exit code 0.
 7. **Backend Linting & Formatting Check**: `npm run lint` and `npm run format:check` completed with exit code 0.
 8. **Real Local End-to-End CORS & API Check**: Tested live HTTP POST request with `Origin: http://localhost:5173` to `http://localhost:8000/api/v1/verify` with real QR payload and test merchant ID: confirmed HTTP 200, CORS headers, `VERIFIED` and `DESTINATION_MISMATCH` canonical states against live Supabase registry.
+9. **Genuine Manual Supabase Verification**: Executed live integration with Supabase Auth and PostgreSQL tables under RLS: confirmed user sign-in, onboarding profile registration under `auth.uid() = user_id`, trusted payment destination insertion (`VPA`), destination active state update, reload persistence, unauthenticated query rejection (0 records returned), and clean re-authentication.
 
 ---
 
@@ -483,12 +509,13 @@ None.
 1. **Future Flags Opt-In**: Configured `v7_relativeSplatPath: true` in `createBrowserRouter` and `v7_startTransition: true` in `RouterProvider` to eliminate future deprecation warnings in React Router v6.
 2. **Honest Workspace UI**: Removed buttons that implied active capabilities before backend implementation.
 3. **Factual Foundation Wording**: Replaced speculative "Session Active" status with explicit "Authentication not configured".
+4. **Client-Side Auth & RLS Model**: Client queries use the standard Supabase anonymous/publishable key; access control and tenant isolation are enforced strictly by PostgreSQL RLS (`auth.uid() = user_id`). No Supabase secret or service-role keys are exposed to the frontend.
 
 ---
 
 ## 9. Next Task
 
-**Phase 1**: Supabase Auth Integration & Merchant Session Management.
+**Phase 3**: Reference QR Storage Integration & Official Reference QR Asset Management.
 
 ---
 

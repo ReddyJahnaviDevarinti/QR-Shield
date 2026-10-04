@@ -1,11 +1,12 @@
 import React from 'react';
-import { AlertCircle, AlertTriangle, CheckCircle2, Info } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle2, Info, X } from 'lucide-react';
 
 export interface AlertProps {
   variant?: 'info' | 'warning' | 'error' | 'success';
   title?: string;
   children: React.ReactNode;
   action?: React.ReactNode;
+  onClose?: () => void;
   style?: React.CSSProperties;
 }
 
@@ -14,6 +15,7 @@ export const Alert: React.FC<AlertProps> = ({
   title,
   children,
   action,
+  onClose,
   style,
 }) => {
   const getVariantConfig = () => {
@@ -101,6 +103,35 @@ export const Alert: React.FC<AlertProps> = ({
       </div>
 
       {action && <div style={{ flexShrink: 0 }}>{action}</div>}
+
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Dismiss alert"
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--color-text-muted)',
+            cursor: 'pointer',
+            padding: '2px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 'var(--radius-sm)',
+            flexShrink: 0,
+            transition: 'color var(--transition-fast)',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--color-text-primary)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--color-text-muted)';
+          }}
+        >
+          <X size={16} />
+        </button>
+      )}
     </div>
   );
 };
