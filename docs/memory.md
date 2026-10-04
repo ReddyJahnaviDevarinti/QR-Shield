@@ -1,8 +1,8 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 8 — Gemini Explanation Layer
-Current Sub-Phase: Prompt 018 Complete (QRShield Gemini Explanation Layer)
+Current Phase: Phase 9 — Frontend Live Verification Integration
+Current Sub-Phase: Prompt 019 Complete (Frontend → Live Verification API Integration)
 
 Last Updated: 2026-10-04
 
@@ -237,7 +237,36 @@ The following items and components have been implemented, verified, and locked i
   - ESM Type-Only Exports: Fixed `AlignmentClassification`, `TamperAnalysisErrorCode`, and other type re-exports across `tamper-analysis` and `composite-verification` using `export type` syntax.
   - Automated Tests: 25 new tests added (21 in `gateway.test.ts`, 4 in `verify.test.ts`). Total backend test count: 202 passed across 9 suites with mocked Gemini boundary.
   - Live Verification Checks: Executed live diagnostics and confirmed `VERIFIED` and `DESTINATION_MISMATCH` against real Supabase registry with canonical statuses fully preserved.
-  - Zero database mutations. Zero Storage uploads. Zero frontend modifications.
+  - **Prompt 019 Frontend → Live Verification API Integration (`frontend/src/`)**:
+  - Implemented typed API client (`frontend/src/lib/api.ts`) for `POST /api/v1/verify` targeting `VITE_API_BASE_URL` (defaults to `http://localhost:8000`).
+  - Architecture invariants strictly maintained:
+    - Frontend communicates exclusively with the backend API (`/api/v1/verify`).
+    - Frontend contains ZERO backend secrets (no `GEMINI_API_KEY`, no `SUPABASE_SECRET_KEY`).
+    - Frontend performs NO QR decoding, NO payment payload parsing, NO registry queries, and NO Gemini API calls.
+    - Frontend treats backend `verification_status` as completely authoritative.
+    - Zero permanent scan storage introduced; no Supabase storage upload from the browser.
+  - API Client implementation:
+    - Validates file presence, empty files, file size (<= 10MB), and image MIME types (`image/png`, `image/jpeg`, `image/webp`).
+    - Constructs `multipart/form-data` with exact field name `image` and optional `merchant_id`.
+    - Does NOT manually set `Content-Type` header (lets browser construct multipart boundary).
+    - Custom error hierarchy (`ApiClientError`) capturing backend HTTP status, machine error codes (`code`), and recovery hints (`hint`).
+  - Verify Page Integration (`frontend/src/pages/VerifyPage.tsx`):
+    - Connected `FileDropzone` directly to `verifyQr`.
+    - Supports optional manual entry of `merchant_id` without hardcoding test merchants in production UI.
+    - Handles loading states (`dropzoneState="processing"`, `LoadingState` with accessible label, buttons disabled to prevent duplicate submissions).
+    - Handles error states with `Alert` variant `error`, machine code, recovery message, and retry handler.
+    - Renders returned verification result faithfully: canonical `StatusBadge` (`VERIFIED`, `DESTINATION_MISMATCH`, `UNVERIFIED`, `SUSPICIOUS`, `INSUFFICIENT_EVIDENCE`), decoded payload, destination parity, registered destination, image quality classifications, machine-readable risk factor tags, and neutral Gemini/deterministic explanation.
+    - Added "Clear" / Reset action restoring clean idle state.
+  - Fastify CORS Encapsulation Fix (`backend/src/plugins/security.ts`):
+    - Wrapped `securityPlugin` with `fastify-plugin` (`fp`) to prevent Fastify scope encapsulation from dropping CORS headers on sibling routes (`/api/v1/verify`, `/api/v1/health`), enabling browser cross-origin requests from `http://localhost:5173`.
+  - Testing & Quality Verification:
+    - Configured Vitest + JSDOM for frontend (`frontend/vitest.config.ts`).
+    - 7 unit tests for API client (`frontend/src/lib/api.test.ts`).
+    - 8 integration tests for `VerifyPage` (`frontend/src/pages/VerifyPage.test.tsx`) covering all 5 canonical statuses, error alerts, and inflight duplicate submission prevention.
+    - 15 frontend tests passing cleanly.
+    - Frontend `npm run lint`, `npm run format:check`, and `npm run build` all pass with zero errors.
+    - Backend `npm run build`, `npm run lint`, `npm run format:check`, and all 202 backend tests across 9 suites pass with zero regressions.
+    - Real local end-to-end integration verified via live HTTP POST from `http://localhost:5173` origin returning HTTP 200 with `VERIFIED` and `DESTINATION_MISMATCH` canonical states against live backend and Supabase registry.
 
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
@@ -257,7 +286,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 018 (Build QRShield Gemini Explanation Layer)**. Ready for next phase.
+Completed **Prompt 019 (QRShield Frontend → Live Verification API Integration)**. Ready for next phase.
 
 
 ---
@@ -407,7 +436,8 @@ QR-Shield/
 | **Supabase PostgreSQL** | Database persistence & RLS | Active & reachable (Schema & read-adapter connected) |
 | **Supabase Auth** | Merchant authentication | Foundation active (Auth UI in Phase 1) |
 | **Supabase Storage** | Reference image vault | Not configured yet (Planned: Phase 3) |
-| **Google Gemini API** | Contextual explanation layer | Not configured yet (Planned: Phase 8) |
+| **Google Gemini API** | Contextual explanation layer | Active & validated (`@google/genai` in `backend/`) |
+| **Vitest (Frontend)** | Frontend unit & component testing | Active & validated (`vitest`, `@testing-library/react` in `frontend/`) |
 
 ---
 
@@ -415,15 +445,15 @@ QR-Shield/
 
 | Environment Variable / Service | Status | Notes |
 | :--- | :--- | :--- |
-| `VITE_API_BASE_URL` | Configured locally / Template | Defined in `.env.example`; defaults to `http://localhost:3000` |
+| `VITE_API_BASE_URL` | Configured locally | Configured in `frontend/.env.local`; `http://localhost:8000` |
 | `VITE_SUPABASE_URL` | Configured locally | Loaded from `frontend/.env.local` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Configured locally | Loaded from `frontend/.env.local` (Client-safe publishable key) |
 | `VITE_APP_ENV` | Configured locally | Defaults to `development` |
 | `SUPABASE_URL` | Configured locally | Loaded from `backend/.env` (Backend registry target) |
 | `SUPABASE_SECRET_KEY` | Configured locally | Loaded from `backend/.env` (Backend server secret; strictly gitignored) |
-| `GEMINI_API_KEY` | Not configured | Backend-only secret; never exposed to browser |
+| `GEMINI_API_KEY` | Configured locally | Backend-only secret; strictly loaded in `backend/.env` |
 
-*Security Confirmation*: Zero actual API keys or secrets exist in the repository or git history.
+*Security Confirmation*: Zero actual API keys or secrets exist in git-tracked files or repository history.
 
 ---
 
@@ -431,12 +461,14 @@ QR-Shield/
 
 The following checks and validations were executed locally and passed with zero errors:
 
-1. **Dependency Installation**: `npm i lucide-react` completed cleanly (exit code 0).
-2. **TypeScript Compilation & Build**: `npm run build` (`tsc -b && vite build`) completed with exit code 0 (`dist/` compiled cleanly: 1929 modules transformed, 264.46 kB bundle).
-3. **Linting Check**: `npm run lint` (`eslint .`) completed with exit code 0 (zero errors, zero warnings).
-4. **Code Formatting Check**: `npm run format:check` (`prettier --check "src/**/*.{ts,tsx,css}"`) completed with exit code 0 (all files use Prettier style).
-5. **Route Navigation & Future Flags Verification**: Verified routes (`/`, `/verify`, `/dashboard`, `/invalid-route`). Zero React Router warnings captured. 404 handler verified.
-6. **Dashboard UI Verification**: Confirmed absence of unimplemented action buttons (`Export Audit Logs`, `Register Destination`, `Add VPA`, `Upload Asset`) and confirmed updated session wording (`"Authentication not configured"`, `"Merchant profile not connected"`).
+1. **Frontend Vitest Test Suite**: `npm test` (`vitest run`) in `frontend/` passed 15 tests across 2 suites (`src/lib/api.test.ts`, `src/pages/VerifyPage.test.tsx`).
+2. **Frontend TypeScript Compilation & Build**: `npm run build` (`tsc -b && vite build`) completed with exit code 0 (`dist/` compiled cleanly: 1932 modules transformed, 277.84 kB bundle).
+3. **Frontend Linting Check**: `npm run lint` (`eslint .`) completed with exit code 0 (zero errors, zero warnings).
+4. **Frontend Code Formatting Check**: `npm run format:check` (`prettier --check "src/**/*.{ts,tsx,css}"`) completed with exit code 0.
+5. **Backend Vitest Test Suite**: `npm test` (`vitest run`) in `backend/` passed all 202 tests across 9 test suites with zero regressions.
+6. **Backend TypeScript Compilation & Build**: `npm run build` (`tsc`) completed with exit code 0.
+7. **Backend Linting & Formatting Check**: `npm run lint` and `npm run format:check` completed with exit code 0.
+8. **Real Local End-to-End CORS & API Check**: Tested live HTTP POST request with `Origin: http://localhost:5173` to `http://localhost:8000/api/v1/verify` with real QR payload and test merchant ID: confirmed HTTP 200, CORS headers, `VERIFIED` and `DESTINATION_MISMATCH` canonical states against live Supabase registry.
 
 ---
 

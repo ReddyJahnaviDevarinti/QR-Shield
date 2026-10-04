@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
+import fp from 'fastify-plugin';
 import { env } from '../config/env.js';
 
-export async function securityPlugin(app: FastifyInstance): Promise<void> {
+async function securityPluginImpl(app: FastifyInstance): Promise<void> {
   // Security headers via Helmet
   await app.register(helmet, {
     contentSecurityPolicy: env.NODE_ENV === 'production',
@@ -30,3 +31,7 @@ export async function securityPlugin(app: FastifyInstance): Promise<void> {
     credentials: true,
   });
 }
+
+export const securityPlugin = fp(securityPluginImpl, {
+  name: 'securityPlugin',
+});
