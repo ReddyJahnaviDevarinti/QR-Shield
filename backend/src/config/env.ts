@@ -1,7 +1,17 @@
-try {
-  process.loadEnvFile?.();
-} catch {
-  // .env file is optional; environment variables can be provided by the runtime environment
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Safely load .env from current directory or backend/.env
+const candidatePaths = ['.env', 'backend/.env', '../backend/.env'];
+for (const envPath of candidatePaths) {
+  try {
+    if (existsSync(envPath)) {
+      process.loadEnvFile?.(resolve(envPath));
+      break;
+    }
+  } catch {
+    // Runtime environment variables take precedence
+  }
 }
 
 export interface EnvironmentConfig {
@@ -9,6 +19,8 @@ export interface EnvironmentConfig {
   NODE_ENV: 'development' | 'production' | 'test';
   ALLOWED_ORIGINS: string[];
   HOST: string;
+  SUPABASE_URL: string;
+  SUPABASE_SECRET_KEY: string;
 }
 
 function parsePort(val: string | undefined, defaultPort: number): number {
@@ -39,9 +51,27 @@ function parseAllowedOrigins(val: string | undefined, nodeEnv: string): string[]
 const nodeEnv = (process.env['NODE_ENV'] || 'development') as
   'development' | 'production' | 'test';
 
+const supabaseUrl =
+  process.env['SUPABASE_URL']?.trim() ||
+  (nodeEnv === 'test' ? 'https://test-placeholder.supabase.co' : '');
+
+if (!supabaseUrl) {
+  throw new Error('Missing required environment variable: SUPABASE_URL.');
+}
+
+const supabaseSecretKey =
+  process.env['SUPABASE_SECRET_KEY']?.trim() ||
+  (nodeEnv === 'test' ? 'sb_secret_test_placeholder' : '');
+
+if (!supabaseSecretKey) {
+  throw new Error('Missing required environment variable: SUPABASE_SECRET_KEY.');
+}
+
 export const env: EnvironmentConfig = {
   PORT: parsePort(process.env['PORT'], 8000),
   NODE_ENV: nodeEnv,
   ALLOWED_ORIGINS: parseAllowedOrigins(process.env['ALLOWED_ORIGINS'], nodeEnv),
   HOST: process.env['HOST'] || '0.0.0.0',
+  SUPABASE_URL: supabaseUrl,
+  SUPABASE_SECRET_KEY: supabaseSecretKey,
 };

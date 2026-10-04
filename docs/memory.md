@@ -107,17 +107,31 @@ The following items and components have been implemented, verified, and locked i
   - Complete isolation from payee name, amount, MCC, currency, and network/db/AI layers.
   - Implemented comprehensive Vitest test suite (`engine.test.ts`): 18 tests covering VPA exact match, case/whitespace normalization, VPA mismatch, empty/inactive registrations, multiple trusted anchors, URL exact match and mismatch, TEXT handling, insufficient evidence, payee name / amount / MCC independence, zero network / zero filesystem calls, and deterministic idempotency.
   - All 43 backend tests passing cleanly.
+- **Prompt 012 Supabase Trusted Registry Adapter (`backend/src/integrations/`)**:
+  - Installed `@supabase/supabase-js` in `backend/package.json` without `@supabase/ssr`.
+  - Configured typed backend environment variables (`SUPABASE_URL`, `SUPABASE_SECRET_KEY`) with fail-fast validation on startup without exposing secret values in error messages.
+  - Updated `backend/.env.example` with placeholders only; verified `backend/.env` is strictly gitignored.
+  - Created server-only Supabase client (`src/integrations/supabase/client.ts`) configured with `persistSession: false`, `autoRefreshToken: false`, and `detectSessionInUrl: false`.
+  - Implemented narrow read-only trusted registry repository (`src/integrations/trusted-registry/`):
+    - `findActiveTrustedDestinations`: Queries `payment_destinations` with exact projection (`merchant_id, destination_type, destination_value, is_active`), filters `is_active = true`, matches `destination_type`, and enforces deterministic string matching.
+    - Zero mutation operations: does not insert, update, upsert, or delete database rows.
+    - Zero external bank calls, zero DNS resolutions, zero URL following.
+    - `checkRegistryConnection`: Safe `LIMIT 1` read query confirming live reachability without creating test rows.
+    - Controlled error hierarchy: `RegistryError`, `SupabaseNotConfiguredError` (`E_SUPABASE_NOT_CONFIGURED`), `RegistryQueryFailedError` (`E_REGISTRY_QUERY_FAILED`).
+  - Implemented comprehensive mocked Vitest test suite (`repository.test.ts`): 13 tests covering active VPA mapping, active URL mapping, inactive exclusion, type mismatch filtering, empty results, error handling, projection purity, mutation absence, zero network leakage, secret protection, verification engine compatibility, and determinism.
+  - Verified live database reachability against Supabase using real `SUPABASE_SECRET_KEY` in `backend/.env` with 0 mutations, verified zero-row handling, and zero secret leakage.
+  - All 56 backend tests passing cleanly.
 
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
-- Merchant & Payment Destination Registry Backend (Phase 3)
-- Verification API Endpoint (`POST /api/v1/verify`) and Orchestration Pipeline (Phase 4 / Phase 5)
+- Merchant Admin Registry Endpoints (Phase 3)
+- Verification API Endpoint (`POST /api/v1/verify`) and Pipeline Orchestration (Phase 4 / Phase 5)
 - Physical Tamper & Baseline Reference Comparison (Phase 6)
 - Calibrated Risk Engine (Phase 7)
 - Google Gemini Explanation Layer (Phase 8)
 - Sample Lab Test Harness (Phase 9)
-- Verification Audit History (Phase 10)
+- Verification Audit History & Verification Logs Table Writing (Phase 10)
 - Testing & Benchmark Suite (Phase 11)
 - Security Hardening (Phase 12)
 - Production Build Preparation (Phase 13)
@@ -129,7 +143,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 011 (QRShield Deterministic Verification Engine)**. Ready for next phase (verification pipeline orchestration or Phase 1 Supabase Auth).
+Completed **Prompt 012 (QRShield Supabase Trusted Registry Adapter)**. Ready for next phase (verification API endpoint orchestration or Phase 1 Supabase Auth).
 
 ---
 
@@ -160,6 +174,15 @@ QR-Shield/
 │       ├── server.ts
 │       ├── config/
 │       │   └── env.ts
+│       ├── integrations/
+│       │   ├── supabase/
+│       │   │   └── client.ts
+│       │   └── trusted-registry/
+│       │       ├── errors.ts
+│       │       ├── index.ts
+│       │       ├── repository.test.ts
+│       │       ├── repository.ts
+│       │       └── types.ts
 │       ├── modules/
 │       │   ├── payment-parser/
 │       │   │   ├── errors.ts
@@ -265,7 +288,8 @@ QR-Shield/
 | **Sharp** | Image decoding & RGBA normalization | Active & validated (`sharp` in `backend/`) |
 | **jsQR** | Deterministic bit-matrix QR decoding | Active & validated (`jsqr` in `backend/`) |
 | **Vitest** | Automated backend unit testing | Active & validated (`vitest` in `backend/`) |
-| **Supabase PostgreSQL** | Database persistence & RLS | Active & reachable (Schema created) |
+| **Supabase Server SDK** | Backend registry adapter & service client | Active & validated (`@supabase/supabase-js` in `backend/`) |
+| **Supabase PostgreSQL** | Database persistence & RLS | Active & reachable (Schema & read-adapter connected) |
 | **Supabase Auth** | Merchant authentication | Foundation active (Auth UI in Phase 1) |
 | **Supabase Storage** | Reference image vault | Not configured yet (Planned: Phase 3) |
 | **Google Gemini API** | Contextual explanation layer | Not configured yet (Planned: Phase 8) |
@@ -280,7 +304,8 @@ QR-Shield/
 | `VITE_SUPABASE_URL` | Configured locally | Loaded from `frontend/.env.local` |
 | `VITE_SUPABASE_PUBLISHABLE_KEY` | Configured locally | Loaded from `frontend/.env.local` (Client-safe publishable key) |
 | `VITE_APP_ENV` | Configured locally | Defaults to `development` |
-| `SUPABASE_SERVICE_ROLE_KEY` | Not configured | Backend-only secret; never exposed to browser |
+| `SUPABASE_URL` | Configured locally | Loaded from `backend/.env` (Backend registry target) |
+| `SUPABASE_SECRET_KEY` | Configured locally | Loaded from `backend/.env` (Backend server secret; strictly gitignored) |
 | `GEMINI_API_KEY` | Not configured | Backend-only secret; never exposed to browser |
 
 *Security Confirmation*: Zero actual API keys or secrets exist in the repository or git history.
