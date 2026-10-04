@@ -84,12 +84,21 @@ The following items and components have been implemented, verified, and locked i
   - Configured Vitest test runner (`vitest.config.ts`, `npm run test`).
   - Implemented comprehensive unit test suite (`decoder.test.ts`): 9 tests covering UPI URIs, URLs, plain text, invalid bytes, empty buffers, format conversions (PNG, JPEG, WebP), non-QR solid images, and input guards.
   - Verified manual decoding of `upi://pay?pa=store@icici&pn=Test%20Store&mc=5411` with exact matching payload, 400x400 dimensions, and 3 finder patterns.
+- **Prompt 010 Deterministic Payment Payload Parser (`backend/src/modules/payment-parser/`)**:
+  - Implemented pure deterministic payment payload parser converting raw QR strings into strongly typed discriminated models (`UPI_URI`, `GENERIC_URL`, `TEXT`).
+  - Supported UPI parameters: `pa` (canonical payment destination), `pn` (payee name), `am` (amount as string), `mc` (merchant category code), `cu` (currency with default 'INR'), `mode`, `url`, `refUrl`.
+  - Enforced strict normalization: trimming, URL/percent-decoding (handling `%20`, `+`, `%26`, `%40`), and lowercasing `pa` without losing semantic content.
+  - Implemented controlled error hierarchy (`errors.ts`): `EmptyPayloadError` (`E_EMPTY_PAYLOAD`), `MalformedUriError` (`E_MALFORMED_URI`), `InvalidUpiPayloadError` (`E_INVALID_UPI_PAYLOAD`), `AmbiguousParameterError` (`E_AMBIGUOUS_PARAMETER`), `InvalidAmountError` (`E_INVALID_AMOUNT`), `InvalidCurrencyError` (`E_INVALID_CURRENCY`), `InvalidMccError` (`E_INVALID_MCC`).
+  - Strict duplicate handling: rejects duplicate security-sensitive parameters (`pa`, `am`, `cu`, `pn`, `mc`) as ambiguous; deterministically retains first occurrence for non-security parameters.
+  - Pure CPU in-memory execution: zero network calls, zero file I/O, zero database queries, zero LLM / Gemini involvement.
+  - Implemented comprehensive unit test suite (`parser.test.ts`): 16 tests covering full UPI URI, minimal UPI URI with INR default, encoded merchant names, VPA trimming/lowercasing, generic URLs, plain text, missing pa, empty payloads, invalid amount, invalid currency, invalid MCC, duplicate security parameters, deterministic non-security duplicates, malformed URI handling, zero network requests assertion, and case-insensitive query parameter keys.
+  - All 25 backend tests passing cleanly.
 
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
 - Merchant & Payment Destination Registry Backend (Phase 3)
-- Verification API Endpoint (`POST /api/v1/verify`) and UPI Payload Parser (Phase 4 / Phase 5)
+- Verification API Endpoint (`POST /api/v1/verify`) and Orchestration Pipeline (Phase 4 / Phase 5)
 - Payment Destination Verification Engine (Phase 5)
 - Physical Tamper & Baseline Reference Comparison (Phase 6)
 - Calibrated Risk Engine (Phase 7)
@@ -107,7 +116,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 009 (QRShield Deterministic QR Decoder)**. Ready for next phase (payment payload parser or Phase 1 Supabase Auth).
+Completed **Prompt 010 (QRShield Deterministic Payment Payload Parser)**. Ready for next phase (payment destination verification engine or Phase 1 Supabase Auth).
 
 ---
 
@@ -139,6 +148,12 @@ QR-Shield/
 │       ├── config/
 │       │   └── env.ts
 │       ├── modules/
+│       │   ├── payment-parser/
+│       │   │   ├── errors.ts
+│       │   │   ├── index.ts
+│       │   │   ├── parser.test.ts
+│       │   │   ├── parser.ts
+│       │   │   └── types.ts
 │       │   └── qr-decoder/
 │       │       ├── decoder.test.ts
 │       │       ├── decoder.ts
