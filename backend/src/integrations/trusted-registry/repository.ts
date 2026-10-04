@@ -96,6 +96,67 @@ export async function findActiveTrustedDestinations(
 }
 
 /**
+ * Retrieves active trusted destination registrations for a specific merchant.
+ *
+ * Architectural & Security Rules:
+ * - Read-only query: performs no inserts, updates, deletes, or mutations.
+ * - Narrow projection: selects only merchant_id, destination_type, destination_value, is_active.
+ * - Filters strictly by merchant_id, is_active = true, and destination_type.
+ * - Returns only merchantId, destinationType, destinationValue, isActive.
+ * - No contact data, registration numbers, or storage access.
+ *
+ * @param merchantId - The merchant identifier to query.
+ * @param destinationType - Expected destination type ('VPA' or 'URL').
+ * @param client - Supabase client instance (defaults to supabaseServer).
+ * @returns Promise resolving to active TrustedRegistryDestination records for this merchant.
+ * @throws RegistryQueryFailedError on database query failure.
+ */
+export async function findActiveTrustedDestinationsForMerchant(
+  merchantId: string,
+  destinationType: 'VPA' | 'URL',
+  client: SupabaseClient = supabaseServer,
+): Promise<TrustedRegistryDestination[]> {
+  if (!merchantId || merchantId.trim().length === 0) {
+    return [];
+  }
+
+  const { data, error } = await client
+    .from('payment_destinations')
+    .select('merchant_id, destination_type, destination_value, is_active')
+    .eq('merchant_id', merchantId.trim())
+    .eq('is_active', true)
+    .eq('destination_type', destinationType);
+
+  if (error) {
+    throw new RegistryQueryFailedError(
+      'Failed to retrieve trusted destination records from database.',
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return [];
+  }
+
+  const rows = data as unknown as PaymentDestinationRow[];
+  const matchingDestinations: TrustedRegistryDestination[] = [];
+
+  for (const row of rows) {
+    if (!row.is_active || row.destination_type !== destinationType) {
+      continue;
+    }
+
+    matchingDestinations.push({
+      merchantId: row.merchant_id,
+      destinationType: row.destination_type,
+      destinationValue: row.destination_value,
+      isActive: row.is_active,
+    });
+  }
+
+  return matchingDestinations;
+}
+
+/**
  * Verifies Supabase database reachability against the payment_destinations table.
  *
  * Safety Guarantees:

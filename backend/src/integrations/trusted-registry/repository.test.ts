@@ -1,6 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { findActiveTrustedDestinations, checkRegistryConnection } from './repository.js';
+import {
+  findActiveTrustedDestinations,
+  findActiveTrustedDestinationsForMerchant,
+  checkRegistryConnection,
+} from './repository.js';
 import { RegistryQueryFailedError } from './errors.js';
 import { verifyDestination } from '../../modules/verification-engine/engine.js';
 import { ParsedUpiPayload } from '../../modules/payment-parser/types.js';
@@ -35,6 +39,15 @@ function createMockClient(response: MockResponse | Error) {
     update: vi.fn(),
     delete: vi.fn(),
     upsert: vi.fn(),
+    then(
+      onfulfilled?: (value: unknown) => unknown,
+      onrejected?: (reason: unknown) => unknown,
+    ) {
+      if (response instanceof Error) {
+        return Promise.reject(response).then(onfulfilled, onrejected);
+      }
+      return Promise.resolve(response).then(onfulfilled, onrejected);
+    },
   };
 
   const client = {
@@ -309,5 +322,121 @@ describe('Supabase Trusted Registry Adapter', () => {
       error: { message: 'network error' },
     });
     expect(await checkRegistryConnection(failure.client)).toBe(false);
+  });
+
+  describe('findActiveTrustedDestinationsForMerchant', () => {
+    it('14. Retrieves active destinations for specified merchant and type', async () => {
+      const { client, chain } = createMockClient({
+        data: [
+          {
+            merchant_id: 'merchant-abc',
+            destination_type: 'VPA',
+            destination_value: 'store@icici',
+            is_active: true,
+          },
+        ],
+        error: null,
+      });
+
+      const results = await findActiveTrustedDestinationsForMerchant(
+        'merchant-abc',
+        'VPA',
+        client,
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]).toEqual({
+        merchantId: 'merchant-abc',
+        destinationType: 'VPA',
+        destinationValue: 'store@icici',
+        isActive: true,
+      });
+      expect(chain.select).toHaveBeenCalledWith(
+        'merchant_id, destination_type, destination_value, is_active',
+      );
+      expect(chain.eq).toHaveBeenCalledWith('merchant_id', 'merchant-abc');
+      expect(chain.eq).toHaveBeenCalledWith('is_active', true);
+      expect(chain.eq).toHaveBeenCalledWith('destination_type', 'VPA');
+    });
+
+    it('15. Excludes inactive destinations for merchant', async () => {
+      const { client } = createMockClient({
+        data: [
+          {
+            merchant_id: 'merchant-abc',
+            destination_type: 'VPA',
+            destination_value: 'inactive@icici',
+            is_active: false,
+          },
+        ],
+        error: null,
+      });
+
+      const results = await findActiveTrustedDestinationsForMerchant(
+        'merchant-abc',
+        'VPA',
+        client,
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('16. Returns empty array when merchant has no active destinations', async () => {
+      const { client } = createMockClient({
+        data: [],
+        error: null,
+      });
+
+      const results = await findActiveTrustedDestinationsForMerchant(
+        'merchant-none',
+        'VPA',
+        client,
+      );
+
+      expect(results).toEqual([]);
+    });
+
+    it('17. Returns empty array when merchantId is empty or whitespace', async () => {
+      const { client, chain } = createMockClient({
+        data: [],
+        error: null,
+      });
+
+      const resEmpty = await findActiveTrustedDestinationsForMerchant('', 'VPA', client);
+      const resWhitespace = await findActiveTrustedDestinationsForMerchant(
+        '   ',
+        'VPA',
+        client,
+      );
+
+      expect(resEmpty).toEqual([]);
+      expect(resWhitespace).toEqual([]);
+      expect(chain.select).not.toHaveBeenCalled();
+    });
+
+    it('18. Throws RegistryQueryFailedError on database query failure', async () => {
+      const { client } = createMockClient({
+        data: null,
+        error: { message: 'Database connection failed' },
+      });
+
+      await expect(
+        findActiveTrustedDestinationsForMerchant('merchant-abc', 'VPA', client),
+      ).rejects.toThrow(RegistryQueryFailedError);
+    });
+
+    it('19. Performs no mutations', async () => {
+      const { client, chain } = createMockClient({
+        data: [],
+        error: null,
+      });
+
+      await findActiveTrustedDestinationsForMerchant('merchant-abc', 'VPA', client);
+
+      expect(chain.insert).not.toHaveBeenCalled();
+      expect(chain.update).not.toHaveBeenCalled();
+      expect(chain.delete).not.toHaveBeenCalled();
+      expect(chain.upsert).not.toHaveBeenCalled();
+    });
   });
 });

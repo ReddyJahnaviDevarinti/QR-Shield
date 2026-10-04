@@ -1,7 +1,9 @@
 import fastify, { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
+import fastifyMultipart from '@fastify/multipart';
 import { env } from './config/env.js';
 import { securityPlugin } from './plugins/security.js';
 import { healthRoutes } from './routes/health.js';
+import { verifyRoutes } from './routes/verify.js';
 
 export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
   const app = fastify({
@@ -45,12 +47,22 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
       'Unhandled request error',
     );
 
+    if (error.code === 'FST_REQ_FILE_TOO_LARGE' || statusCode === 413) {
+      return reply.status(413).send({
+        error: {
+          code: 'E_PAYLOAD_TOO_LARGE',
+          message: 'Uploaded file exceeds maximum permitted limit of 10 MB.',
+          details: 'The maximum allowed file size is 10 MB.',
+        },
+      });
+    }
+
     const message =
       isClientError || env.NODE_ENV !== 'production'
         ? error.message
         : 'An internal server error occurred.';
 
-    reply.status(statusCode).send({
+    return reply.status(statusCode).send({
       status: 'error',
       statusCode,
       error: error.name || 'InternalServerError',
@@ -70,7 +82,14 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
 
   // Register core plugins
   app.register(securityPlugin);
+  app.register(fastifyMultipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024,
+      files: 1,
+    },
+  });
   app.register(healthRoutes);
+  app.register(verifyRoutes);
 
   return app;
 }

@@ -1,8 +1,8 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 0 — Production Design System & UI Foundation
-Current Sub-Phase: Prompt 006A UI Foundation QA Fixes Complete
+Current Phase: Phase 4 / Phase 5 — Core Verification Pipeline & API
+Current Sub-Phase: Prompt 013 Complete (End-to-End Verification API POST /api/v1/verify)
 Last Updated: 2026-10-04
 
 ---
@@ -122,11 +122,27 @@ The following items and components have been implemented, verified, and locked i
   - Verified live database reachability against Supabase using real `SUPABASE_SECRET_KEY` in `backend/.env` with 0 mutations, verified zero-row handling, and zero secret leakage.
   - All 56 backend tests passing cleanly.
 
+- **Prompt 013 End-to-End Verification API (`POST /api/v1/verify`)**:
+  - Installed `@fastify/multipart` with safe payload limits (10 MB maximum file size, 1 file maximum).
+  - Extended Supabase trusted registry adapter with `findActiveTrustedDestinationsForMerchant(merchantId, destinationType)` returning active destinations for specified merchant and type without mutations or broad merchant listings.
+  - Implemented `POST /api/v1/verify` route handler (`backend/src/routes/verify.ts`):
+    - Accepts `multipart/form-data` with required `image` file and optional `merchant_id` and `opt_in_audit` fields.
+    - Strictly validates MIME types (`image/jpeg`, `image/png`, `image/webp`), non-empty buffer, and size limits in-memory without writing to disk or uploading to Supabase Storage.
+    - Deterministic pipeline orchestration: `decodeQr` -> `parsePaymentPayload` -> registry lookup -> pure `verifyDestination`.
+    - Public Mode (no `merchant_id`): matches scanned destination in registry; returns `VERIFIED` on match or `UNVERIFIED` on no match.
+    - Merchant Context Mode (`merchant_id` present): queries active destinations for merchant; returns `VERIFIED`, `DESTINATION_MISMATCH`, or `UNVERIFIED`.
+    - Pure verification engine remains sole canonical status decision maker.
+    - Response contract: `verification_status`, `decoded_payload`, `normalized_destination`, `registered_destination`, `destination_match`, `evidence`, `risk_factors`, `explanation` (deterministic fallback), and `processing_metadata` with real UUID (`verification_id`), dynamic ISO timestamp, and measured non-negative duration (`duration_ms`).
+    - Controlled error mapping: 400 (missing/empty/unsupported/corrupt image), 413 (payload too large), 422 (no QR detected, malformed payload), 503 (registry unavailable), 500 (internal error) with structured JSON `{ error: { code, message, details } }` and zero secret / SQL / stack trace leakage.
+    - Route registered in `backend/src/app.ts`; existing `GET /api/v1/health` verified intact.
+    - Comprehensive automated test suite (`backend/src/routes/verify.test.ts`, 25 tests) mocking external boundaries via `app.inject()` and in-memory `qrcode` fixtures.
+    - Live local diagnostic against `http://localhost:8000/api/v1/verify` with `nonexistent-store@icici` verified returning HTTP 200 `UNVERIFIED` and server cleanly shut down.
+    - Total backend tests: 87 passing across 5 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
+
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
 - Merchant Admin Registry Endpoints (Phase 3)
-- Verification API Endpoint (`POST /api/v1/verify`) and Pipeline Orchestration (Phase 4 / Phase 5)
 - Physical Tamper & Baseline Reference Comparison (Phase 6)
 - Calibrated Risk Engine (Phase 7)
 - Google Gemini Explanation Layer (Phase 8)
@@ -143,7 +159,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 012 (QRShield Supabase Trusted Registry Adapter)**. Ready for next phase (verification API endpoint orchestration or Phase 1 Supabase Auth).
+Completed **Prompt 013 (QRShield End-to-End Verification API: POST /api/v1/verify)**. Ready for next phase.
 
 ---
 
