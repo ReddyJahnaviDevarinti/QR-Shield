@@ -380,3 +380,78 @@ export async function deleteReferenceQr(
     );
   }
 }
+
+export interface SampleMetadata {
+  id: string;
+  name: string;
+  category: CanonicalCompositeStatus;
+  expected_status: CanonicalCompositeStatus;
+  summary: string;
+  description: string;
+  creation_method: string;
+  payload: string;
+  image_file: string;
+  storage_path: string;
+  public_url: string;
+  api_image_url: string;
+  requires_merchant_context: boolean;
+  merchant_id?: string;
+  merchant_name?: string;
+  expected_evidence: Record<string, unknown>;
+}
+
+export interface SampleCatalogResponse {
+  version: string;
+  generated_at?: string;
+  description?: string;
+  samples: SampleMetadata[];
+}
+
+/**
+ * Fetches the read-only sample catalog from GET /api/v1/samples.
+ */
+export async function fetchSampleCatalog(): Promise<SampleCatalogResponse> {
+  const baseUrl = getApiBaseUrl();
+  const response = await fetch(`${baseUrl}/api/v1/samples`);
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to fetch sample catalog.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
+  return (await response.json()) as SampleCatalogResponse;
+}
+
+/**
+ * Loads the actual sample image as a File object from either the backend API image stream
+ * or the public Supabase storage URL.
+ */
+export async function fetchSampleImageFile(sample: SampleMetadata): Promise<File> {
+  const baseUrl = getApiBaseUrl();
+  const endpointsToTry = [`${baseUrl}${sample.api_image_url}`, sample.public_url];
+
+  let lastError: Error | null = null;
+  for (const url of endpointsToTry) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const blob = await res.blob();
+        return new File([blob], sample.image_file, { type: 'image/png' });
+      }
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  throw new ApiClientError(
+    `Failed to download sample image '${sample.image_file}'.`,
+    500,
+    'E_SAMPLE_IMAGE_FETCH_FAILED',
+    lastError?.message,
+  );
+}

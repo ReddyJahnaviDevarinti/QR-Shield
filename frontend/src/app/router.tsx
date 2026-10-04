@@ -2,6 +2,7 @@ import { createBrowserRouter } from 'react-router-dom';
 import { RootLayout } from '../layouts/RootLayout';
 import { HomePage } from '../pages/HomePage';
 import { VerifyPage } from '../pages/VerifyPage';
+import { SampleLabPage } from '../pages/SampleLabPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { AuthPage } from '../pages/AuthPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
@@ -20,6 +21,10 @@ export const router = createBrowserRouter(
         {
           path: 'verify',
           element: <VerifyPage />,
+        },
+        {
+          path: 'sample-lab',
+          element: <SampleLabPage />,
         },
         {
           path: 'login',

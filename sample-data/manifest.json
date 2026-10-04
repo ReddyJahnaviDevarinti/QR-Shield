@@ -1,0 +1,128 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-10-04T12:00:00Z",
+  "description": "QRShield Evaluator Sample Lab Specimens - Reproducible, deterministic benchmark test cases",
+  "samples": [
+    {
+      "id": "sample-verified",
+      "name": "Official Registered Merchant QR",
+      "category": "VERIFIED",
+      "expected_status": "VERIFIED",
+      "summary": "Authentic merchant payment QR code matching both registered trusted destination and visual reference baseline.",
+      "description": "Demonstrates successful verification of a genuine merchant QR code. The payment address matches the active database registry record, camera image quality meets all thresholds, and physical appearance matches the merchant's registered reference baseline.",
+      "creation_method": "Deterministic QR generation via qrcode (v4 error correction level M, 400x400 px, margin 4). Rendered with high contrast and optimal sharpness.",
+      "payload": "upi://pay?pa=qrshield-sample@icici&pn=QRShield%20Sample%20Store&mc=5411",
+      "image_file": "sample-01-verified.png",
+      "storage_path": "verified/candidate.png",
+      "public_url": "https://uivcrkcbhidsgyfbezju.supabase.co/storage/v1/object/public/sample-lab/verified/candidate.png",
+      "api_image_url": "/api/v1/samples/sample-verified/image",
+      "requires_merchant_context": true,
+      "merchant_id": "51bc512c-7945-4404-bd24-4316ce924daa",
+      "merchant_name": "QRShield Demo Merchant",
+      "expected_evidence": {
+        "destination_match": true,
+        "overall_quality": "ACCEPTABLE",
+        "tamper_available": true,
+        "boundary_anomaly_detected": false,
+        "visual_deviation_index_max": 0.05,
+        "risk_factors": [],
+        "recommendation": "REVIEW_NOT_REQUIRED"
+      }
+    },
+    {
+      "id": "sample-destination-mismatch",
+      "name": "Replaced QR Code (Destination Mismatch)",
+      "category": "DESTINATION_MISMATCH",
+      "expected_status": "DESTINATION_MISMATCH",
+      "summary": "Malicious QR code redirecting funds to an unauthorized attacker account instead of the merchant's registered account.",
+      "description": "Demonstrates detection of a payment destination override attack. An attacker has generated a fraudulent QR code bearing the store's name but redirecting payments to an unauthorized attacker VPA. The system detects the destination conflict against the trusted registry.",
+      "creation_method": "Deterministic QR generation using attacker payment payload (pa=attacker-sample@upi) evaluated against the merchant's registered registry destination (pa=qrshield-sample@icici).",
+      "payload": "upi://pay?pa=attacker-sample@upi&pn=QRShield%20Sample%20Store&mc=5411",
+      "image_file": "sample-02-mismatch.png",
+      "storage_path": "mismatch/candidate.png",
+      "public_url": "https://uivcrkcbhidsgyfbezju.supabase.co/storage/v1/object/public/sample-lab/mismatch/candidate.png",
+      "api_image_url": "/api/v1/samples/sample-destination-mismatch/image",
+      "requires_merchant_context": true,
+      "merchant_id": "51bc512c-7945-4404-bd24-4316ce924daa",
+      "merchant_name": "QRShield Demo Merchant",
+      "expected_evidence": {
+        "destination_match": false,
+        "overall_quality": "ACCEPTABLE",
+        "tamper_available": false,
+        "risk_factors": ["DESTINATION_CONFLICT"],
+        "recommendation": "DO_NOT_PROCEED_WITH_PAYMENT"
+      }
+    },
+    {
+      "id": "sample-unverified",
+      "name": "Unregistered Merchant Destination",
+      "category": "UNVERIFIED",
+      "expected_status": "UNVERIFIED",
+      "summary": "QR code containing a readable payment address that has no active trust anchor in the verified registry.",
+      "description": "Demonstrates handling of an unanchored payment destination. The QR is technically decodable, but the payment address has never been registered by a verified merchant. The system surfaces an informational warning without falsely accusing the merchant of fraud.",
+      "creation_method": "Deterministic QR generation with an unregistered payment address (pa=unregistered-sample@upi) evaluated with no merchant context or registry match.",
+      "payload": "upi://pay?pa=unregistered-sample@upi&pn=Unregistered%20Merchant&mc=5411",
+      "image_file": "sample-03-unverified.png",
+      "storage_path": "unverified/candidate.png",
+      "public_url": "https://uivcrkcbhidsgyfbezju.supabase.co/storage/v1/object/public/sample-lab/unverified/candidate.png",
+      "api_image_url": "/api/v1/samples/sample-unverified/image",
+      "requires_merchant_context": false,
+      "expected_evidence": {
+        "destination_match": false,
+        "overall_quality": "ACCEPTABLE",
+        "tamper_available": false,
+        "risk_factors": ["NO_TRUSTED_REGISTRATION"],
+        "recommendation": "VERIFY_MERCHANT_BEFORE_PAYMENT"
+      }
+    },
+    {
+      "id": "sample-suspicious",
+      "name": "Physical Sticker / Border Tampering",
+      "category": "SUSPICIOUS",
+      "expected_status": "SUSPICIOUS",
+      "summary": "QR code with valid destination but showing clear visual perimeter cutlines / sticker overlay anomalies against the baseline.",
+      "description": "Demonstrates detection of physical QR tampering (e.g. pasted sticker overlay). The scanned payload matches the merchant's destination, but deterministic homographic and perimeter edge analysis reveals an anomalous rectangular boundary cutline.",
+      "creation_method": "Deterministic QR baseline composited with an edge cutline perimeter overlay (340x340 px rectangular stroke in quiet zone) that triggers boundaryAnomalyDetected in the tamper analysis engine while preserving decodability.",
+      "payload": "upi://pay?pa=qrshield-sample@icici&pn=QRShield%20Sample%20Store&mc=5411",
+      "image_file": "sample-04-suspicious.png",
+      "storage_path": "suspicious/candidate.png",
+      "public_url": "https://uivcrkcbhidsgyfbezju.supabase.co/storage/v1/object/public/sample-lab/suspicious/candidate.png",
+      "api_image_url": "/api/v1/samples/sample-suspicious/image",
+      "requires_merchant_context": true,
+      "merchant_id": "51bc512c-7945-4404-bd24-4316ce924daa",
+      "merchant_name": "QRShield Demo Merchant",
+      "expected_evidence": {
+        "destination_match": true,
+        "overall_quality": "ACCEPTABLE",
+        "tamper_available": true,
+        "boundary_anomaly_detected": true,
+        "risk_factors": ["BOUNDARY_EDGE_ANOMALY"],
+        "recommendation": "MANUAL_INSPECTION_RECOMMENDED"
+      }
+    },
+    {
+      "id": "sample-insufficient-evidence",
+      "name": "Degraded Camera Capture (Insufficient Evidence)",
+      "category": "INSUFFICIENT_EVIDENCE",
+      "expected_status": "INSUFFICIENT_EVIDENCE",
+      "summary": "Severely underexposed, blurred, and low-contrast capture where image quality is insufficient for authoritative verification.",
+      "description": "Demonstrates safe handling of degraded photography. Although the matrix is barely decodable through Reed-Solomon parity recovery, the image quality analyzer flags multiple severe defects (low resolution, extreme underexposure, blur, low contrast). Rather than risking a false negative, the system requires a clearer capture.",
+      "creation_method": "Baseline QR downsampled to 140x140 px, underexposed to 0.18 mean brightness, and blurred via Gaussian filter (sigma 0.8), triggering imageQuality.overallQuality = INSUFFICIENT.",
+      "payload": "upi://pay?pa=qrshield-sample@icici&pn=QRShield%20Sample%20Store&mc=5411",
+      "image_file": "sample-05-insufficient.png",
+      "storage_path": "insufficient-evidence/candidate.png",
+      "public_url": "https://uivcrkcbhidsgyfbezju.supabase.co/storage/v1/object/public/sample-lab/insufficient-evidence/candidate.png",
+      "api_image_url": "/api/v1/samples/sample-insufficient-evidence/image",
+      "requires_merchant_context": true,
+      "merchant_id": "51bc512c-7945-4404-bd24-4316ce924daa",
+      "merchant_name": "QRShield Demo Merchant",
+      "expected_evidence": {
+        "destination_match": true,
+        "overall_quality": "INSUFFICIENT",
+        "tamper_available": false,
+        "risk_factors": ["IMAGE_QUALITY_INSUFFICIENT"],
+        "recommendation": "CAPTURE_CLEARER_IMAGE"
+      }
+    }
+  ]
+}

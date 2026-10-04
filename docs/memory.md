@@ -1,8 +1,8 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 3 / Phase 10 — Reference QR Storage + Real Physical Tamper Verification
-Current Sub-Phase: Prompt 021 Complete (Reference QR Storage & Physical Tamper Analysis)
+Current Phase: Phase 9 — Real Sample Lab + Evaluator-Ready End-to-End Test Cases
+Current Sub-Phase: Prompt 022 Complete (Sample Lab Architecture & Reproducible Validation Suite)
 
 Last Updated: 2026-10-04
 
@@ -559,17 +559,47 @@ The following checks and validations were executed locally and passed with zero 
     - **Authentication Fix**: Implemented strict bearer token authentication across all reference QR endpoints (`GET`, `POST`, `DELETE`). The bearer token is extracted from the `Authorization: Bearer <token>` header and validated via `supabaseServer.auth.getUser(token)`. Missing, empty, malformed, or invalid tokens immediately reject with HTTP 401 `E_UNAUTHORIZED`. Tokens are never decoded client-side or accepted via query parameters.
     - **Merchant Ownership Authorization**: Added strict profile ownership validation before any privileged DB or Storage operation. The system resolves the merchant record by `:merchantId` via the service-role client, verifies that the merchant exists (returning HTTP 404 `E_MERCHANT_NOT_FOUND` if absent), and compares `merchant.user_id === authenticatedUser.id`. If the merchant belongs to another user, the request immediately terminates with HTTP 403 `E_FORBIDDEN` and safe message `"Caller does not own this merchant profile."` with zero detail leakage.
     - **Privileged Client Safety**: Ownership authorization occurs strictly *before* any privileged operations (reading records, generating signed preview URLs, running QR decoder/tamper pipelines, uploading storage objects, or deleting existing files). Unauthorized requests produce zero storage and zero database mutations.
-    - **Frontend Token Propagation**: Updated `frontend/src/lib/api.ts` (`fetchReferenceQr`, `uploadReferenceQr`, `deleteReferenceQr`) to accept optional `accessToken` parameter and attach `Authorization: Bearer <token>`. Updated `frontend/src/context/AuthContext.tsx` to automatically retrieve the active `session.access_token` from Supabase Auth and pass it to all reference QR API calls. Unauthenticated users cannot invoke protected reference QR management methods.
-    - **Backend Authorization Tests**: Added 20 automated authorization test cases (tests 22–41 in `backend/src/routes/reference-qr.test.ts`), verifying:
-      1. Missing Authorization header returns 401 `E_UNAUTHORIZED` on GET, POST, DELETE.
-      2. Malformed or invalid token returns 401 `E_UNAUTHORIZED` on GET, POST, DELETE.
-      3. Nonexistent merchant returns safe 404 `E_MERCHANT_NOT_FOUND`.
-      4. Valid owner token allows GET, POST, and DELETE operations.
-      5. Non-owner token returns 403 `E_FORBIDDEN` on GET, POST, and DELETE.
-      6. Non-owner POST and DELETE cause zero Supabase Storage modifications and zero database mutations.
-      7. Authorization occurs strictly before any privileged Storage/DB access.
+    - **Backend Authorization Tests**: Added 20 automated authorization test cases (tests 22–41 in `backend/src/routes/reference-qr.test.ts`).
     - **Frontend Security Tests**: Added automated security tests (tests 21–26 in `frontend/src/security.test.ts` and `frontend/src/lib/api.test.ts`) proving that reference API calls send the `Authorization` header, no Supabase service-role keys are exposed in the frontend bundle, and no hardcoded merchant UUIDs exist in frontend source.
     - **Manual Security Validation**: Executed `backend/src/scripts/live-security-check.ts` against real live Supabase instances with harmless test accounts. Validated that User A accessing Merchant A succeeded (HTTP 200), User A attempting to access Merchant B returned HTTP 403 `E_FORBIDDEN`, unauthorized requests returned HTTP 401 `E_UNAUTHORIZED`, and Merchant B's database records and private Storage files remained 100% untouched.
+
+  - **Prompt 022 — Real Sample Lab + Evaluator-Ready End-to-End Test Cases**:
+    - **Architecture & Design Principles**:
+      - Implemented a public-safe, reproducible **Sample Lab** providing real evaluator test cases without hard-coded result cards, synthetic metrics, or fake counters.
+      - Architectural flow: Evaluator selects a real test specimen → UI loads the actual PNG file → calls the authoritative `POST /api/v1/verify` endpoint → backend performs full decoding, registry lookup, camera quality gating, and homographic projective tamper analysis → UI renders the measured verdict and evidence breakdown.
+      - Expected statuses are strictly treated as QA assertions and benchmark metadata; the UI displays only the live measured output from the backend verification pipeline.
+    - **Sample Catalog & Manifest (`sample-data/`)**:
+      - `sample-data/manifest.json`: Single source of truth defining all 5 canonical specimens, including ID, name, canonical category, expected status, test payload, creation method, public storage URL, local API streaming endpoint, and merchant context requirements.
+      - `sample-data/images/`: 6 deterministic physical PNG assets generated via `qrcode` and `sharp`:
+        1. `sample-01-verified.png`: Authentic QR matching registered destination (`pa=qrshield-sample@icici`) and reference baseline.
+        2. `sample-02-mismatch.png`: Attacker QR with unauthorized destination (`pa=attacker-sample@upi`) evaluated against registered merchant context.
+        3. `sample-03-unverified.png`: Unanchored payment destination (`pa=unregistered-sample@upi`) evaluated without merchant context.
+        4. `sample-04-suspicious.png`: Valid payment destination (`pa=qrshield-sample@icici`) composited with a 340x340 px rectangular boundary cutline in the quiet zone that triggers `boundaryAnomalyDetected = true` (score 0.604) in the physical tamper analysis engine while remaining decodable.
+        5. `sample-05-insufficient.png`: Degraded photograph downsampled to 140x140 px, underexposed to 0.18 mean brightness, and blurred via Gaussian filter (sigma 0.8), triggering `image_quality.overall_quality = INSUFFICIENT`.
+        6. `reference-baseline.png`: Pristine baseline reference QR stored exclusively in the private `reference-qrs` storage bucket for merchant `51bc512c-7945-4404-bd24-4316ce924daa`.
+    - **Backend Routes (`backend/src/routes/samples.ts`)**:
+      - `GET /api/v1/samples`: Read-only catalog endpoint returning all 5 sample definitions.
+      - `GET /api/v1/samples/:sampleId`: Single sample detail endpoint.
+      - `GET /api/v1/samples/:sampleId/image`: Streams the physical sample PNG directly with `Content-Type: image/png` and caching headers, enabling offline and local verification.
+    - **Validation Runner (`npm run sample:validate`)**:
+      - Created `backend/src/scripts/validate-samples.ts` executing all 5 specimens through `POST /api/v1/verify`.
+      - Compares measured status against expected status. Exits 0 on 100% pass, non-zero on any divergence.
+      - All 5 samples passed with 100% fidelity:
+        - `Official Registered Merchant QR`: Expected `VERIFIED` → Actual `VERIFIED`
+        - `Replaced QR Code (Destination Mismatch)`: Expected `DESTINATION_MISMATCH` → Actual `DESTINATION_MISMATCH`
+        - `Unregistered Merchant Destination`: Expected `UNVERIFIED` → Actual `UNVERIFIED`
+        - `Physical Sticker / Border Tampering`: Expected `SUSPICIOUS` → Actual `SUSPICIOUS`
+        - `Degraded Camera Capture`: Expected `INSUFFICIENT_EVIDENCE` → Actual `INSUFFICIENT_EVIDENCE`
+    - **Evaluator Frontend (`frontend/src/pages/SampleLabPage.tsx`)**:
+      - Built interactive Sample Lab conforming to the dark obsidian/slate design system.
+      - Features specimen selector with category badges and QA benchmark tags, physical image preview, embedded test payload, creation details, and a primary "Run Real Verification" button.
+      - Real-time live execution state and structured evidence display: Live Status, QA Assertion banner, Destination Parity analysis, Image Quality metrics, Physical Tamper metrics, Gemini / Fallback explanation, and duration telemetry.
+      - Integrated into navigation bar (`NAV_LINKS`) and router (`/sample-lab`).
+    - **Security & Storage Isolation**:
+      - Public synthetic assets reside in the public `sample-lab` bucket in Supabase (`https://uivcrkcbhidsgyfbezju.supabase.co/storage/v1/object/public/sample-lab/`).
+      - Verified that all sample URLs return HTTP 200 publicly.
+      - Verified that private merchant reference QRs remain strictly protected in the private `reference-qrs` bucket (HTTP 400/403 on unauthenticated access).
+      - Zero secret keys, zero private banking credentials, and zero hard-coded merchant UUIDs in frontend production code.
 
 ---
 
@@ -577,7 +607,8 @@ The following checks and validations were executed locally and passed with zero 
 
 1. **Physical Lighting & Perspective Limitations**: The deterministic tamper analyzer utilizes geometric alignment via corner finding and homography. Extremely skewed (angle > 45°) or severely shadowed/occluded physical scans may result in low alignment quality or `INSUFFICIENT_EVIDENCE` from the image quality analyzer before visual tamper analysis executes.
 2. **Reference QR Decodability Prerequisite**: A reference QR must contain a readable, well-formed QR code so its finder patterns and baseline payload hash can be extracted. Degraded or blurry images cannot be registered as reference baselines.
-3. **No Financial Guarantee Implied**: Registering a reference QR establishes a physical appearance baseline only. It does not certify legal ownership of the underlying bank account or guarantee payment settlement.
+3. **Synthetic Test Payloads**: All Sample Lab specimens utilize harmless synthetic payment handles (e.g. `qrshield-sample@icici`, `attacker-sample@upi`) to demonstrate attack vectors and defenses without exposing real financial data.
+4. **No Financial Guarantee Implied**: Registering a reference QR establishes a physical appearance baseline only. It does not certify legal ownership of the underlying bank account or guarantee payment settlement.
 
 ---
 
@@ -586,6 +617,16 @@ The following checks and validations were executed locally and passed with zero 
 1. **Future Flags Opt-In**: Configured `v7_relativeSplatPath: true` in `createBrowserRouter` and `v7_startTransition: true` in `RouterProvider` to eliminate future deprecation warnings in React Router v6.
 2. **Honest Workspace UI**: Removed buttons that implied active capabilities before backend implementation.
 3. **Factual Foundation Wording**: Replaced speculative "Session Active" status with explicit "Authentication not configured".
+4. **Client-Side Auth & RLS Model**: Client queries use the standard Supabase anonymous/publishable key; access control and tenant isolation are enforced strictly by PostgreSQL RLS (`auth.uid() = user_id`). No Supabase secret or service-role keys are exposed to the frontend.
+5. **Private Storage & Short-Lived Signed URLs**: Reference QR images are stored in a private bucket (`reference-qrs`). Signed preview URLs are created on-demand with a 300-second TTL exclusively for authenticated merchant dashboard preview. No permanent or public URLs are generated.
+6. **Public Sample Lab Storage**: The `sample-lab` bucket is intentionally public for evaluator access to harmless synthetic test vectors, while `reference-qrs` remains strictly private.
+7. **No Synthetic Result Cards**: The Sample Lab always executes the real backend endpoint (`POST /api/v1/verify`) and displays the actual server response. Expected statuses serve exclusively as QA benchmarks.
+
+---
+
+## 9. Next Task
+
+**Phase 11**: Production Hardening & Security Audit (Prior to any deployment)." status with explicit "Authentication not configured".
 4. **Client-Side Auth & RLS Model**: Client queries use the standard Supabase anonymous/publishable key; access control and tenant isolation are enforced strictly by PostgreSQL RLS (`auth.uid() = user_id`). No Supabase secret or service-role keys are exposed to the frontend.
 5. **Private Storage & Short-Lived Signed URLs**: Reference QR images are stored in a private bucket (`reference-qrs`). Signed preview URLs are created on-demand with a 300-second TTL exclusively for authenticated merchant dashboard preview. No permanent or public URLs are generated.
 6. **Deterministic Composite Precedence**: Destination mismatch (`DESTINATION_MISMATCH`) strictly overrides visual tamper evidence. Gemini provides natural language explanation of evidence but cannot alter or override the deterministic canonical status.

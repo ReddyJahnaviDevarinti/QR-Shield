@@ -8,6 +8,7 @@ export const APP_MISSION =
 export const NAV_LINKS = [
   { path: '/', label: 'Overview' },
   { path: '/verify', label: 'Verify Scan' },
+  { path: '/sample-lab', label: 'Sample Lab' },
   { path: '/dashboard', label: 'Dashboard' },
 ] as const;
 
