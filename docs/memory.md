@@ -1,8 +1,8 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 4 / Phase 5 — Core Verification Pipeline & API
-Current Sub-Phase: Prompt 013 Complete (End-to-End Verification API POST /api/v1/verify)
+Current Phase: Phase 6 — Physical Tamper Analysis & Quality Screening
+Current Sub-Phase: Prompt 014 Complete (Deterministic Image Quality Analyzer)
 Last Updated: 2026-10-04
 
 ---
@@ -139,6 +139,29 @@ The following items and components have been implemented, verified, and locked i
     - Live local diagnostic against `http://localhost:8000/api/v1/verify` with `nonexistent-store@icici` verified returning HTTP 200 `UNVERIFIED` and server cleanly shut down.
     - Total backend tests: 87 passing across 5 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
 
+- **Prompt 014 Deterministic Image Quality Analyzer (`backend/src/modules/image-quality/`)**:
+  - Implemented pure deterministic image quality analyzer evaluating whether uploaded QR images meet visual standards for reliable downstream QR and tamper processing.
+  - Used Sharp for safe in-memory decoding, EXIF rotation (`.rotate()`), bounded grayscale conversion (`.resize()` to 512px max dimension), and raw pixel normalization without disk writes or buffer mutation.
+  - Computed 7 core deterministic metrics:
+    1. `width` (source px)
+    2. `height` (source px)
+    3. `pixelCount` (source width * height)
+    4. `meanBrightness` (normalized 0.0 to 1.0)
+    5. `contrastScore` (normalized standard deviation / 127.5, 0.0 to 1.0)
+    6. `sharpnessScore` (normalized variance of discrete 2D Laplacian, 0.0 to 1.0)
+    7. `dynamicRange` (max - min intensity / 255.0, 0.0 to 1.0)
+  - Defined explicit initial engineering heuristics in `rules.ts`:
+    - `BRIGHTNESS_TOO_DARK_THRESHOLD` (0.20), `BRIGHTNESS_TOO_BRIGHT_THRESHOLD` (0.85) -> `TOO_DARK`, `ACCEPTABLE`, `TOO_BRIGHT`
+    - `CONTRAST_LOW_THRESHOLD` (0.25) -> `LOW_CONTRAST`, `ACCEPTABLE_CONTRAST`
+    - `SHARPNESS_BLUR_THRESHOLD` (0.15), `SHARPNESS_EXTREME_BLUR_THRESHOLD` (0.04) -> `BLURRY`, `ACCEPTABLE_SHARPNESS`
+    - `DYNAMIC_RANGE_LOW_THRESHOLD` (0.30)
+    - `MIN_USABLE_DIMENSION` (64px), `MIN_RECOMMENDED_DIMENSION` (200px)
+  - Emitted deterministic overall decisions: `ACCEPTABLE`, `DEGRADED`, `INSUFFICIENT` with diagnostic `qualityFlags`.
+  - Defined controlled errors: `InvalidImageError` (`E_INVALID_IMAGE`), `ImageTooLargeError` (`E_IMAGE_TOO_LARGE`), `ImageAnalysisFailedError` (`E_IMAGE_ANALYSIS_FAILED`).
+  - Implemented comprehensive Vitest test suite (`analyzer.test.ts`, 22 tests) covering high-quality QR, dark, bright, low-contrast, blurred, tiny dimensions, low resolution, random bytes, empty buffer, unsupported formats, JPEG/WebP formats, determinism, network isolation, buffer non-mutation, and exact threshold boundary testing.
+  - Zero ML models, zero OpenCV, zero Gemini, zero network calls, zero database mutations, zero frontend changes.
+  - All 109 backend tests passing cleanly.
+
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
@@ -159,7 +182,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 013 (QRShield End-to-End Verification API: POST /api/v1/verify)**. Ready for next phase.
+Completed **Prompt 014 (QRShield Deterministic Image Quality Analyzer)**. Ready for next phase (visual tamper analysis or pipeline integration).
 
 ---
 
