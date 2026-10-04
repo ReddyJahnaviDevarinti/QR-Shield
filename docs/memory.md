@@ -56,10 +56,16 @@ The following items and components have been implemented, verified, and locked i
   - **Preserved Existing Design**: Colors, typography, spacing, navigation, and component contracts remained identical.
 - **Dependencies Added**:
   - `lucide-react` (installed cleanly, only authorized icon library).
+  - `@supabase/supabase-js` (official Supabase client for browser data/auth operations).
   - No CSS frameworks introduced (Tailwind, MUI, Bootstrap, Chakra are absent).
+- **Prompt 007 Supabase Frontend Client Integration**:
+  - Protected `.env.local` via `.gitignore`.
+  - Configured `frontend/src/lib/supabase.ts` with typed client reading `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
+  - Validated connection against existing schema tables (`merchants`, `payment_destinations`, `reference_qrs`, `verification_logs`) returning status 200 with RLS enforced and zero mutations.
+  - Updated `vite-env.d.ts` with publishable key type declaration.
 
 ### Not Completed (Explicitly Pending Future Phases)
-- Authentication & Sessions (Phase 1 — Supabase Auth)
+- Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
 - Merchant & Payment Destination Registry Backend (Phase 3)
 - Real QR Upload, Camera Capture & Deterministic Decoding (Phase 4)
@@ -177,9 +183,10 @@ QR-Shield/
 | **Vanilla CSS** | Design tokens & design system | Active & validated (`tokens.css` + `index.css`) |
 | **ESLint 9** | Code quality & static analysis | Active & validated (`npm run lint` passes) |
 | **Prettier 3** | Code formatting | Active & validated (`npm run format:check` passes) |
+| **Supabase Client** | Official browser DB/Auth client | Active & validated (`@supabase/supabase-js`) |
 | **Node.js Fastify** | Backend REST API | Planned (Target: Render in Phase 4/5) |
-| **Supabase PostgreSQL** | Database persistence & RLS | Not configured yet (Planned: Phase 1/3) |
-| **Supabase Auth** | Merchant authentication | Not configured yet (Planned: Phase 1) |
+| **Supabase PostgreSQL** | Database persistence & RLS | Active & reachable (Schema created) |
+| **Supabase Auth** | Merchant authentication | Foundation active (Auth UI in Phase 1) |
 | **Supabase Storage** | Reference image vault | Not configured yet (Planned: Phase 3) |
 | **Google Gemini API** | Contextual explanation layer | Not configured yet (Planned: Phase 8) |
 
@@ -190,8 +197,8 @@ QR-Shield/
 | Environment Variable / Service | Status | Notes |
 | :--- | :--- | :--- |
 | `VITE_API_BASE_URL` | Configured locally / Template | Defined in `.env.example`; defaults to `http://localhost:3000` |
-| `VITE_SUPABASE_URL` | Not configured | Placeholder in `.env.example`; requires Supabase project |
-| `VITE_SUPABASE_ANON_KEY` | Not configured | Placeholder in `.env.example`; client-safe public key |
+| `VITE_SUPABASE_URL` | Configured locally | Loaded from `frontend/.env.local` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Configured locally | Loaded from `frontend/.env.local` (Client-safe publishable key) |
 | `VITE_APP_ENV` | Configured locally | Defaults to `development` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Not configured | Backend-only secret; never exposed to browser |
 | `GEMINI_API_KEY` | Not configured | Backend-only secret; never exposed to browser |
