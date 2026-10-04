@@ -21,6 +21,7 @@ export interface EnvironmentConfig {
   HOST: string;
   SUPABASE_URL: string;
   SUPABASE_SECRET_KEY: string;
+  GEMINI_API_KEY?: string;
 }
 
 function parsePort(val: string | undefined, defaultPort: number): number {
@@ -67,6 +68,11 @@ if (!supabaseSecretKey) {
   throw new Error('Missing required environment variable: SUPABASE_SECRET_KEY.');
 }
 
+const geminiApiKey =
+  nodeEnv === 'test'
+    ? process.env['TEST_GEMINI_API_KEY']?.trim() || undefined
+    : process.env['GEMINI_API_KEY']?.trim() || undefined;
+
 export const env: EnvironmentConfig = {
   PORT: parsePort(process.env['PORT'], 8000),
   NODE_ENV: nodeEnv,
@@ -74,4 +80,5 @@ export const env: EnvironmentConfig = {
   HOST: process.env['HOST'] || '0.0.0.0',
   SUPABASE_URL: supabaseUrl,
   SUPABASE_SECRET_KEY: supabaseSecretKey,
+  GEMINI_API_KEY: geminiApiKey,
 };

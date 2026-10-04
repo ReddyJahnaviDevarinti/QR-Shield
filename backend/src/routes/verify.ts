@@ -32,6 +32,10 @@ import {
   type TrustedRegistryDestination,
 } from '../integrations/trusted-registry/index.js';
 import { RegistryError } from '../integrations/trusted-registry/errors.js';
+import {
+  generateExplanation,
+  type ExplanationInput,
+} from '../integrations/gemini/index.js';
 
 /**
  * Permitted image MIME types per system specification.
@@ -88,30 +92,15 @@ export interface VerifySuccessResponse {
   risk_factors: CompositeRiskFactor[];
   recommendation: CompositeRecommendation;
   explanation: string;
+  explanation_metadata: {
+    provider: 'gemini' | 'deterministic_fallback';
+    model: 'gemini-3.8-flash' | null;
+  };
   processing_metadata: {
     verification_id: string;
     timestamp: string;
     duration_ms: number;
   };
-}
-
-/**
- * Provides a factual, deterministic explanation from the composite verification result.
- * Gemini is NOT involved in deciding this canonical result.
- */
-function getDeterministicExplanation(status: CanonicalCompositeStatus): string {
-  switch (status) {
-    case 'VERIFIED':
-      return 'The scanned payment destination matches an active trusted registration and the available image evidence is sufficient for verification.';
-    case 'DESTINATION_MISMATCH':
-      return 'The scanned payment destination conflicts with the active trusted destination for the selected merchant.';
-    case 'UNVERIFIED':
-      return 'No active trusted destination is available for comparison.';
-    case 'SUSPICIOUS':
-      return 'The scanned QR code displays visual anomalies requiring manual inspection.';
-    case 'INSUFFICIENT_EVIDENCE':
-      return 'The available evidence is insufficient for a reliable verification result.';
-  }
 }
 
 /**
@@ -313,21 +302,48 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
         null,
       );
 
-      // Step 7: Format response with real UUID, dynamic ISO timestamp, and measured duration
+      // Step 7: Authoritative canonical status anchor
+      // Architectural rule: Gemini has ZERO authority over verification_status
+      const authoritativeStatus = compositeResult.status;
+
+      // Step 8: Gemini explanation layer (explanation-only, zero decision authority)
+      const explanationInput: ExplanationInput = {
+        canonicalStatus: authoritativeStatus,
+        scannedDestination: compositeResult.evidence.destination.scannedDestination,
+        matchedDestination: compositeResult.matchedDestination,
+        destinationMatch: compositeResult.destinationMatch,
+        riskFactors: compositeResult.riskFactors,
+        recommendation: compositeResult.recommendation,
+        imageQualitySummary: {
+          overallQuality: compositeResult.evidence.imageQuality.overallQuality,
+          brightnessClassification:
+            compositeResult.evidence.imageQuality.brightnessClassification,
+          contrastClassification:
+            compositeResult.evidence.imageQuality.contrastClassification,
+          sharpnessClassification:
+            compositeResult.evidence.imageQuality.sharpnessClassification,
+        },
+        tamperSummary: null,
+        evidenceCodes: [authoritativeStatus, ...compositeResult.riskFactors],
+      };
+
+      const explanationResult = await generateExplanation(explanationInput);
+
+      // Step 9: Format response with real UUID, dynamic ISO timestamp, and measured duration
       const durationMs = Math.max(
         0,
         Math.round((performance.now() - startTime) * 100) / 100,
       );
       const verificationId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
-      const explanation = getDeterministicExplanation(compositeResult.status);
 
       // Structured logging without sensitive secrets or image content
       request.log.info(
         {
           verification_id: verificationId,
           endpoint: '/api/v1/verify',
-          status: compositeResult.status,
+          status: authoritativeStatus,
+          provider: explanationResult.metadata.provider,
           duration_ms: durationMs,
           opt_in_audit: optInAudit ?? false,
         },
@@ -335,7 +351,7 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
       );
 
       const responseBody: VerifySuccessResponse = {
-        verification_status: compositeResult.status,
+        verification_status: authoritativeStatus,
         decoded_payload: decoded.rawPayload,
         normalized_destination: compositeResult.evidence.destination.scannedDestination,
         registered_destination: compositeResult.matchedDestination,
@@ -381,7 +397,11 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
         },
         risk_factors: compositeResult.riskFactors,
         recommendation: compositeResult.recommendation,
-        explanation,
+        explanation: explanationResult.explanation,
+        explanation_metadata: {
+          provider: explanationResult.metadata.provider,
+          model: explanationResult.metadata.model,
+        },
         processing_metadata: {
           verification_id: verificationId,
           timestamp,

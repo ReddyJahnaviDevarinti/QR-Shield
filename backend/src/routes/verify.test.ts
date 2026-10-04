@@ -5,6 +5,7 @@ import { buildApp } from '../app.js';
 import * as registryModule from '../integrations/trusted-registry/index.js';
 import { RegistryQueryFailedError } from '../integrations/trusted-registry/errors.js';
 import { supabaseServer } from '../integrations/supabase/client.js';
+import * as geminiModule from '../integrations/gemini/index.js';
 import { execSync } from 'node:child_process';
 
 /**
@@ -1164,6 +1165,187 @@ describe('End-to-End QR Verification API (POST /api/v1/verify)', () => {
 
       const body = res.json();
       expect(body.composite_evidence.tamper.available).toBe(false);
+    });
+  });
+
+  describe('Prompt 018: Gemini Explanation Layer API Integration', () => {
+    it('P18-1. Returns explanation_metadata with deterministic_fallback when Gemini is unconfigured', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('VERIFIED');
+      expect(body.explanation_metadata).toEqual({
+        provider: 'deterministic_fallback',
+        model: null,
+      });
+      expect(body.explanation).toBe(
+        'The scanned payment destination matches an active trusted registration and the available image evidence is sufficient for verification.',
+      );
+    });
+
+    it('P18-2. Returns provider gemini and generated explanation when Gemini succeeds', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      vi.spyOn(geminiModule, 'generateExplanation').mockResolvedValueOnce({
+        explanation: 'Scanned address matches merchant icici registry record.',
+        structured: {
+          summary: 'Scanned address matches merchant icici registry record.',
+          keyFindings: ['Address confirmed.'],
+          action: 'Proceed with payment.',
+        },
+        metadata: {
+          provider: 'gemini',
+          model: 'gemini-3.8-flash',
+        },
+      });
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('VERIFIED');
+      expect(body.explanation_metadata).toEqual({
+        provider: 'gemini',
+        model: 'gemini-3.8-flash',
+      });
+      expect(body.explanation).toBe(
+        'Scanned address matches merchant icici registry record.',
+      );
+    });
+
+    it('P18-3. Gemini can never change canonical status from DESTINATION_MISMATCH', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=attacker@upi&pn=Test%20Store&mc=5411',
+      );
+      vi.spyOn(
+        registryModule,
+        'findActiveTrustedDestinationsForMerchant',
+      ).mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const req = createMultipartRequest(
+        { merchant_id: 'merchant-101' },
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('DESTINATION_MISMATCH');
+      expect(body.destination_match).toBe(false);
+      expect(body.explanation_metadata).toBeDefined();
+    });
+
+    it('P18-4. Input passed to explanation layer contains strictly structured evidence and no secrets or image buffers', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const explainSpy = vi.spyOn(geminiModule, 'generateExplanation');
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(explainSpy).toHaveBeenCalledTimes(1);
+      const inputArg = explainSpy.mock.calls[0]?.[0];
+      expect(inputArg).toBeDefined();
+      expect(inputArg?.canonicalStatus).toBe('VERIFIED');
+      expect(inputArg?.scannedDestination).toBe('store@icici');
+      expect(inputArg).not.toHaveProperty('imageBuffer');
+      expect(inputArg).not.toHaveProperty('apiKey');
+      expect(inputArg).not.toHaveProperty('secretKey');
     });
   });
 });

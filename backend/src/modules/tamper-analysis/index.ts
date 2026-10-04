@@ -1,6 +1,6 @@
 export { analyzeQrVisualDifference } from './analyzer.js';
 
-export {
+export type {
   AlignmentClassification,
   AnalysisQuality,
   AnomalyIndicator,
@@ -16,8 +16,8 @@ export {
   InvalidReferenceImageError,
   ReferenceQrNotDetectedError,
   TamperAnalysisError,
-  TamperAnalysisErrorCode,
 } from './errors.js';
+export type { TamperAnalysisErrorCode } from './errors.js';
 
 export {
   ALIGNMENT_DEGRADED_THRESHOLD,
@@ -35,12 +35,8 @@ export {
   WEIGHT_STRUCTURAL_DIFF,
 } from './rules.js';
 
-export {
-  Point2D,
-  QuadPoints,
-  QuadValidationResult,
-  validateQuadrilateral,
-} from './geometry.js';
+export type { Point2D, QuadPoints, QuadValidationResult } from './geometry.js';
+export { validateQuadrilateral } from './geometry.js';
 
 export {
   binarizeGrayscale,

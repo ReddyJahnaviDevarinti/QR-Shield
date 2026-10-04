@@ -1,6 +1,6 @@
 export { composeVerificationResult } from './engine.js';
 
-export {
+export type {
   CanonicalCompositeStatus,
   CompositeDestinationEvidence,
   CompositeEvidence,

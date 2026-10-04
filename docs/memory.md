@@ -1,8 +1,9 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 6 — Physical Tamper Analysis & Quality Screening
-Current Sub-Phase: Prompt 014 Complete (Deterministic Image Quality Analyzer)
+Current Phase: Phase 8 — Gemini Explanation Layer
+Current Sub-Phase: Prompt 018 Complete (QRShield Gemini Explanation Layer)
+
 Last Updated: 2026-10-04
 
 ---
@@ -222,14 +223,27 @@ The following items and components have been implemented, verified, and locked i
     - Confirmed real local `VERIFIED` result with `overall_quality: ACCEPTABLE`, `destination_match: true`, `tamper.available: false`.
     - Confirmed real local `INSUFFICIENT_EVIDENCE` result with synthetic degraded image crossing low resolution, dark exposure, and blur thresholds.
     - Confirmed real local `DESTINATION_MISMATCH` result with attacker VPA.
-  - Total backend tests: 177 passing across 8 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
+- **Prompt 018 Gemini Explanation Layer (`backend/src/integrations/gemini/`)**:
+  - Implemented the Gemini Explanation Layer converting structured deterministic evidence into neutral, user-readable explanations.
+  - Architectural Invariant: Gemini is strictly an explanatory layer and NEVER decides or overrides the canonical verification status. `verification_status` remains strictly anchored to `CompositeVerificationResult.status`.
+  - SDK: Official `@google/genai` (v2.27.0). Deprecated SDKs (`@google/generative-ai`) and external tools/grounding (search, maps, URLs) are forbidden.
+  - Model: `gemini-3.8-flash`.
+  - Backend-Only Secret Boundary: `GEMINI_API_KEY` loaded exclusively in backend environment; optional on startup without throwing; never exposed to frontend, never logged, never returned in API payloads.
+  - Strict Prompt Template & Injection Defense (`prompt.ts`): Delimits untrusted evidence inside `<verification_evidence>` tags, escapes closing XML tags in untrusted data, and provides authoritative system instructions prohibiting changing status, inventing evidence, claiming fraud, or soliciting credentials (PIN, OTP, CVV, password).
+  - Structured Output & Sanitization (`gateway.ts`): Enforces JSON schema (`summary`, `key_findings`, `action`), strips HTML/scripts, validates consistency against canonical status, rejects forbidden terms ("guaranteed safe", "scam detected"), and rejects model outputs attempting to introduce a `status` field.
+  - Authoritative Deterministic Fallback (`fallback.ts`): Provides factual, non-accusatory fallback text for all 5 canonical statuses (`VERIFIED`, `DESTINATION_MISMATCH`, `UNVERIFIED`, `SUSPICIOUS`, `INSUFFICIENT_EVIDENCE`).
+  - Timeout & Resilience: 5000 ms timeout window; on timeout, API 503, quota errors, unconfigured key, or malformed JSON, seamlessly returns deterministic fallback with `provider: "deterministic_fallback"` and `model: null` without failing the request or throwing HTTP 500.
+  - API Response Contract: Extended `POST /api/v1/verify` response with `explanation_metadata: { provider: 'gemini' | 'deterministic_fallback', model: 'gemini-3.8-flash' | null }`.
+  - ESM Type-Only Exports: Fixed `AlignmentClassification`, `TamperAnalysisErrorCode`, and other type re-exports across `tamper-analysis` and `composite-verification` using `export type` syntax.
+  - Automated Tests: 25 new tests added (21 in `gateway.test.ts`, 4 in `verify.test.ts`). Total backend test count: 202 passed across 9 suites with mocked Gemini boundary.
+  - Live Verification Checks: Executed live diagnostics and confirmed `VERIFIED` and `DESTINATION_MISMATCH` against real Supabase registry with canonical statuses fully preserved.
+  - Zero database mutations. Zero Storage uploads. Zero frontend modifications.
 
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
 - Merchant Admin Registry Endpoints (Phase 3)
 - Calibrated Risk Engine (Phase 7)
-- Google Gemini Explanation Layer (Phase 8)
 - Sample Lab Test Harness (Phase 9)
 - Verification Audit History & Verification Logs Table Writing (Phase 10)
 - Testing & Benchmark Suite (Phase 11)
@@ -243,7 +257,8 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 017 (Integrate Image Quality + Composite Verification into API)**. Ready for next phase (calibrated risk engine or reference QR storage integration).
+Completed **Prompt 018 (Build QRShield Gemini Explanation Layer)**. Ready for next phase.
+
 
 ---
 

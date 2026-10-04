@@ -1,4 +1,4 @@
-import { AlignmentClassification } from './types.js';
+import type { AlignmentClassification } from './types.js';
 import { classifyAlignment } from './rules.js';
 
 export interface Point2D {
