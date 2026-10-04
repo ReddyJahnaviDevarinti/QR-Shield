@@ -162,11 +162,24 @@ The following items and components have been implemented, verified, and locked i
   - Zero ML models, zero OpenCV, zero Gemini, zero network calls, zero database mutations, zero frontend changes.
   - All 109 backend tests passing cleanly.
 
+- **Prompt 015 Deterministic Physical QR Tamper Analysis (`backend/src/modules/tamper-analysis/`)**:
+  - Implemented pure deterministic in-memory visual comparison engine evaluating whether a scanned candidate QR visually deviates from a trusted reference QR.
+  - Core design principle: This is NOT a fraud classifier, NOT an AI detector, and NEVER outputs canonical verification statuses (`VERIFIED`, `DESTINATION_MISMATCH`, `UNVERIFIED`, `SUSPICIOUS`) or subjective claims like "fraud", "fake QR", or "scam confirmed".
+  - Created modular architecture:
+    - `types.ts`: `TamperAnalysisResult`, `AlignmentClassification` (`GOOD`, `DEGRADED`, `INSUFFICIENT`), `AnalysisQuality` (`COMPARABLE`, `DEGRADED`, `INSUFFICIENT`), `TamperRecommendation` (`NO_SIGNIFICANT_VISUAL_DEVIATION`, `REVIEW_VISUAL_DIFFERENCE`, `MANUAL_INSPECTION_RECOMMENDED`, `INSUFFICIENT_VISUAL_EVIDENCE`), structured `AnomalyIndicator` set (`MATRIX_STRUCTURAL_DIFFERENCE`, `BOUNDARY_EDGE_ANOMALY`, `ALIGNMENT_DEGRADED`, `ALIGNMENT_INSUFFICIENT`, `CANDIDATE_QR_NOT_DETECTED`, `REFERENCE_QR_NOT_DETECTED`, `LOW_COMPARABILITY`).
+    - `errors.ts`: Controlled error hierarchy (`TamperAnalysisError`, `InvalidReferenceImageError`, `InvalidCandidateImageError`, `ReferenceQrNotDetectedError`, `CandidateQrNotDetectedError`, `AlignmentFailedError`, `ComparisonFailedError`) preventing leakage of stack traces, paths, or buffer contents.
+    - `rules.ts`: Explicit constants labeled as INITIAL ENGINEERING HEURISTICS (`CANONICAL_QR_SIZE = 256`, `BOUNDARY_MARGIN_RATIO = 0.12`, `WEIGHT_MATRIX_MISMATCH = 0.60`, `WEIGHT_BOUNDARY_ANOMALY = 0.25`, `WEIGHT_STRUCTURAL_DIFF = 0.15`, `VISUAL_DEVIATION_REVIEW_THRESHOLD = 0.20`, `VISUAL_DEVIATION_HIGH_THRESHOLD = 0.35`, `BOUNDARY_ANOMALY_THRESHOLD = 0.35`, `ALIGNMENT_GOOD_THRESHOLD = 0.70`, `ALIGNMENT_DEGRADED_THRESHOLD = 0.45`), with pure deterministic evaluation functions (`classifyAlignment`, `computeVisualDeviationIndex`, `evaluateTamperRecommendation`).
+    - `geometry.ts`: 4-point quadrilateral convexity, minimum area (400 px²), diagonal ratio, opposite side symmetry, aspect ratio, and corner angle orthogonality validation; closed-form 3x3 Heckbert projective homography mapping unit square $(u, v) \in [0, 1]^2$ to detected corner coordinates; bilinear interpolation sampler warping images into canonical $256 \times 256$ arrays.
+    - `comparison.ts`: Optimal Otsu thresholding with plateau midpoint averaging for illumination invariance; binary matrix mismatch ratio computation; normalized grayscale structural difference; Sobel gradient magnitude edge density disparity and interface boundary step discontinuity calculation for sticker cutline / overlay detection.
+    - `analyzer.ts`: Orchestrates pipeline `analyzeQrVisualDifference(referenceBuffer, candidateBuffer)` using existing `decodeQr()` for geometry detection without disk I/O, network calls, or buffer mutations.
+    - `index.ts`: Clean public exports.
+    - `analyzer.test.ts`: 25 comprehensive tests covering identical images, moderate brightness robustness, moderate contrast robustness, slight rotation, scaling differences, simulated sticker border overlay anomaly, different payload structural matrix divergence, invalid reference/candidate images, missing reference/candidate QR, degenerate alignment, determinism, network isolation, filesystem isolation, buffer immutability, result type integrity, and exact threshold boundary testing (just below, at, just above).
+  - Total backend tests: 134 passing across 7 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
+
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
 - Merchant Admin Registry Endpoints (Phase 3)
-- Physical Tamper & Baseline Reference Comparison (Phase 6)
 - Calibrated Risk Engine (Phase 7)
 - Google Gemini Explanation Layer (Phase 8)
 - Sample Lab Test Harness (Phase 9)
@@ -182,7 +195,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 014 (QRShield Deterministic Image Quality Analyzer)**. Ready for next phase (visual tamper analysis or pipeline integration).
+Completed **Prompt 015 (QRShield Deterministic Physical QR Tamper Analysis)**. Ready for next phase (composite verification engine integration / risk calibration).
 
 ---
 
