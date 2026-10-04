@@ -93,13 +93,26 @@ The following items and components have been implemented, verified, and locked i
   - Pure CPU in-memory execution: zero network calls, zero file I/O, zero database queries, zero LLM / Gemini involvement.
   - Implemented comprehensive unit test suite (`parser.test.ts`): 16 tests covering full UPI URI, minimal UPI URI with INR default, encoded merchant names, VPA trimming/lowercasing, generic URLs, plain text, missing pa, empty payloads, invalid amount, invalid currency, invalid MCC, duplicate security parameters, deterministic non-security duplicates, malformed URI handling, zero network requests assertion, and case-insensitive query parameter keys.
   - All 25 backend tests passing cleanly.
+- **Prompt 011 Deterministic Verification Engine (`backend/src/modules/verification-engine/`)**:
+  - Implemented pure deterministic destination verification engine resolving: "Does the decoded payment destination match a trusted registered destination?"
+  - Defined trusted registration model (`TrustedDestination`) without exposing private banking credentials.
+  - Enforced strict canonical statuses (`VERIFIED`, `DESTINATION_MISMATCH`, `UNVERIFIED`, `INSUFFICIENT_EVIDENCE`), excluding `SUSPICIOUS` (deferred to visual tamper layer) and prohibiting subjective terms like "fake" or "fraud".
+  - Defined machine-readable reason codes: `DESTINATION_MATCH`, `DESTINATION_CONFLICT`, `NO_TRUSTED_REGISTRATION`, `NO_PAYMENT_DESTINATION`, `INSUFFICIENT_DESTINATION_DATA`.
+  - Enforced deterministic status precedence:
+    1. Usable destination missing -> `INSUFFICIENT_EVIDENCE`
+    2. Unstructured content (TEXT) -> `UNVERIFIED` (`NO_PAYMENT_DESTINATION`)
+    3. No active trusted registrations -> `UNVERIFIED` (`NO_TRUSTED_REGISTRATION`)
+    4. Exact normalized string match with active registration -> `VERIFIED` (`DESTINATION_MATCH`)
+    5. Active registrations exist but none match -> `DESTINATION_MISMATCH` (`DESTINATION_CONFLICT`)
+  - Complete isolation from payee name, amount, MCC, currency, and network/db/AI layers.
+  - Implemented comprehensive Vitest test suite (`engine.test.ts`): 18 tests covering VPA exact match, case/whitespace normalization, VPA mismatch, empty/inactive registrations, multiple trusted anchors, URL exact match and mismatch, TEXT handling, insufficient evidence, payee name / amount / MCC independence, zero network / zero filesystem calls, and deterministic idempotency.
+  - All 43 backend tests passing cleanly.
 
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
 - Merchant & Payment Destination Registry Backend (Phase 3)
 - Verification API Endpoint (`POST /api/v1/verify`) and Orchestration Pipeline (Phase 4 / Phase 5)
-- Payment Destination Verification Engine (Phase 5)
 - Physical Tamper & Baseline Reference Comparison (Phase 6)
 - Calibrated Risk Engine (Phase 7)
 - Google Gemini Explanation Layer (Phase 8)
@@ -116,7 +129,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 010 (QRShield Deterministic Payment Payload Parser)**. Ready for next phase (payment destination verification engine or Phase 1 Supabase Auth).
+Completed **Prompt 011 (QRShield Deterministic Verification Engine)**. Ready for next phase (verification pipeline orchestration or Phase 1 Supabase Auth).
 
 ---
 
@@ -154,11 +167,17 @@ QR-Shield/
 │       │   │   ├── parser.test.ts
 │       │   │   ├── parser.ts
 │       │   │   └── types.ts
-│       │   └── qr-decoder/
-│       │       ├── decoder.test.ts
-│       │       ├── decoder.ts
-│       │       ├── errors.ts
+│       │   ├── qr-decoder/
+│       │   │   ├── decoder.test.ts
+│       │   │   ├── decoder.ts
+│       │   │   ├── errors.ts
+│       │   │   ├── index.ts
+│       │   │   └── types.ts
+│       │   └── verification-engine/
+│       │       ├── engine.test.ts
+│       │       ├── engine.ts
 │       │       ├── index.ts
+│       │       ├── rules.ts
 │       │       └── types.ts
 │       ├── plugins/
 │       │   └── security.ts
