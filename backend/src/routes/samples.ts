@@ -52,12 +52,20 @@ interface Manifest {
   samples: SampleRecord[];
 }
 
+let cachedManifest: Manifest | null = null;
+
 function loadManifest(): Manifest {
+  if (cachedManifest) {
+    return cachedManifest;
+  }
   const dir = getSampleDataDir();
   const manifestPath = path.join(dir, 'manifest.json');
   const raw = fs.readFileSync(manifestPath, 'utf-8');
-  return JSON.parse(raw) as Manifest;
+  cachedManifest = JSON.parse(raw) as Manifest;
+  return cachedManifest;
 }
+
+const SAMPLE_ID_REGEX = /^[a-zA-Z0-9_-]+$/;
 
 export const sampleRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   /**
@@ -73,13 +81,12 @@ export const sampleRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
         description: manifest.description,
         samples: manifest.samples,
       });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
+    } catch {
       return reply.status(500).send({
-        status: 'error',
-        statusCode: 500,
-        error: 'SampleCatalogError',
-        message: `Failed to load sample catalog: ${message}`,
+        error: {
+          code: 'E_SAMPLE_CATALOG_ERROR',
+          message: 'Failed to load sample catalog.',
+        },
       });
     }
   });
@@ -91,27 +98,37 @@ export const sampleRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
   app.get<{ Params: { sampleId: string } }>(
     '/api/v1/samples/:sampleId',
     async (request, reply) => {
+      const { sampleId } = request.params;
+      if (!sampleId || !SAMPLE_ID_REGEX.test(sampleId)) {
+        return reply.status(400).send({
+          error: {
+            code: 'E_INVALID_SAMPLE_ID',
+            message:
+              'Invalid sample ID format. Must contain only alphanumeric characters, underscores, or dashes.',
+          },
+        });
+      }
+
       try {
         const manifest = loadManifest();
-        const sample = manifest.samples.find((s) => s.id === request.params.sampleId);
+        const sample = manifest.samples.find((s) => s.id === sampleId);
 
         if (!sample) {
           return reply.status(404).send({
-            status: 'error',
-            statusCode: 404,
-            error: 'NotFound',
-            message: `Sample with ID '${request.params.sampleId}' was not found.`,
+            error: {
+              code: 'E_SAMPLE_NOT_FOUND',
+              message: `Sample with ID '${sampleId}' was not found.`,
+            },
           });
         }
 
         return reply.status(200).send({ sample });
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
+      } catch {
         return reply.status(500).send({
-          status: 'error',
-          statusCode: 500,
-          error: 'SampleCatalogError',
-          message: `Failed to retrieve sample: ${message}`,
+          error: {
+            code: 'E_SAMPLE_CATALOG_ERROR',
+            message: 'Failed to retrieve sample.',
+          },
         });
       }
     },
@@ -120,47 +137,68 @@ export const sampleRoutes: FastifyPluginAsync = async (app: FastifyInstance) => 
   /**
    * GET /api/v1/samples/:sampleId/image
    * Streams the actual sample image binary directly for offline or local preview.
+   * Enforces strict path traversal defenses.
    */
   app.get<{ Params: { sampleId: string } }>(
     '/api/v1/samples/:sampleId/image',
     async (request, reply) => {
+      const { sampleId } = request.params;
+      if (!sampleId || !SAMPLE_ID_REGEX.test(sampleId)) {
+        return reply.status(400).send({
+          error: {
+            code: 'E_INVALID_SAMPLE_ID',
+            message: 'Invalid sample ID format.',
+          },
+        });
+      }
+
       try {
         const manifest = loadManifest();
-        const sample = manifest.samples.find((s) => s.id === request.params.sampleId);
+        const sample = manifest.samples.find((s) => s.id === sampleId);
 
         if (!sample) {
           return reply.status(404).send({
-            status: 'error',
-            statusCode: 404,
-            error: 'NotFound',
-            message: `Sample with ID '${request.params.sampleId}' was not found.`,
+            error: {
+              code: 'E_SAMPLE_NOT_FOUND',
+              message: `Sample with ID '${sampleId}' was not found.`,
+            },
           });
         }
 
         const dir = getSampleDataDir();
-        const imagePath = path.join(dir, 'images', sample.image_file);
+        const imagesDir = path.resolve(dir, 'images');
+        const resolvedPath = path.resolve(imagesDir, sample.image_file);
 
-        if (!fs.existsSync(imagePath)) {
-          return reply.status(404).send({
-            status: 'error',
-            statusCode: 404,
-            error: 'NotFound',
-            message: `Sample image file '${sample.image_file}' not found on server disk.`,
+        // Path traversal defense: ensure resolvedPath remains strictly inside imagesDir
+        if (!resolvedPath.startsWith(imagesDir + path.sep)) {
+          return reply.status(400).send({
+            error: {
+              code: 'E_INVALID_IMAGE_PATH',
+              message: 'Invalid sample image path.',
+            },
           });
         }
 
-        const buffer = fs.readFileSync(imagePath);
+        if (!fs.existsSync(resolvedPath)) {
+          return reply.status(404).send({
+            error: {
+              code: 'E_IMAGE_NOT_FOUND',
+              message: `Sample image file '${sample.image_file}' not found on server disk.`,
+            },
+          });
+        }
+
+        const buffer = fs.readFileSync(resolvedPath);
         return reply
           .header('Content-Type', 'image/png')
           .header('Cache-Control', 'public, max-age=3600')
           .send(buffer);
-      } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : String(err);
+      } catch {
         return reply.status(500).send({
-          status: 'error',
-          statusCode: 500,
-          error: 'SampleImageError',
-          message: `Failed to stream sample image: ${message}`,
+          error: {
+            code: 'E_SAMPLE_IMAGE_ERROR',
+            message: 'Failed to stream sample image.',
+          },
         });
       }
     },

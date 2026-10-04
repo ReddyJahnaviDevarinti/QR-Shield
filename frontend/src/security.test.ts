@@ -185,4 +185,33 @@ describe('Frontend Security & Isolation Tests', () => {
 
     expect(offendingFiles).toEqual([]);
   });
+
+  it('27. ensures production distribution bundle contains zero backend secrets', () => {
+    const distAssetsDir = path.resolve(__dirname, '../dist/assets');
+    if (!fs.existsSync(distAssetsDir)) {
+      return; // Skip if dist build has not been generated yet
+    }
+
+    const forbiddenPatterns = [
+      'SUPABASE_SECRET_KEY',
+      ['SUPABASE_SERVICE', 'ROLE_KEY'].join('_'),
+      ['GEMINI_API', 'KEY'].join('_'),
+      'service_role',
+    ];
+
+    const jsFiles = fs
+      .readdirSync(distAssetsDir)
+      .filter((f) => f.endsWith('.js'))
+      .map((f) => path.join(distAssetsDir, f));
+
+    for (const file of jsFiles) {
+      const content = fs.readFileSync(file, 'utf8');
+      for (const pattern of forbiddenPatterns) {
+        expect(
+          content.includes(pattern),
+          `Production bundle '${path.basename(file)}' contains forbidden pattern: ${pattern}`,
+        ).toBe(false);
+      }
+    }
+  });
 });

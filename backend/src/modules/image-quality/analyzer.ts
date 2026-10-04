@@ -8,6 +8,8 @@ import {
   evaluateOverallQuality,
   MAX_ANALYSIS_DIMENSION,
   MAX_IMAGE_BYTES,
+  MAX_IMAGE_DIMENSION,
+  MAX_IMAGE_PIXELS,
 } from './rules.js';
 
 /** Supported image formats strictly validated by Sharp. */
@@ -34,7 +36,7 @@ const SUPPORTED_FORMATS: readonly SupportedImageFormat[] = ['jpeg', 'png', 'webp
  * @param buffer - In-memory image buffer.
  * @returns Strongly typed ImageQualityResult with numeric metrics, classifications, and flags.
  * @throws InvalidImageError on empty, non-buffer, corrupt, or unsupported formats.
- * @throws ImageTooLargeError when image size exceeds 10 MB limit.
+ * @throws ImageTooLargeError when image size exceeds 10 MB limit or dimensions exceed maximum limits.
  */
 export async function analyzeImageQuality(buffer: Buffer): Promise<ImageQualityResult> {
   // 1. Guard against null, non-buffer, or empty buffer inputs
@@ -72,6 +74,16 @@ export async function analyzeImageQuality(buffer: Buffer): Promise<ImageQualityR
   if (!sourceWidth || !sourceHeight || sourceWidth <= 0 || sourceHeight <= 0) {
     throw new InvalidImageError(
       `Invalid source image dimensions: ${sourceWidth}x${sourceHeight}`,
+    );
+  }
+
+  if (
+    sourceWidth > MAX_IMAGE_DIMENSION ||
+    sourceHeight > MAX_IMAGE_DIMENSION ||
+    sourceWidth * sourceHeight > MAX_IMAGE_PIXELS
+  ) {
+    throw new ImageTooLargeError(
+      `Image dimensions (${sourceWidth}x${sourceHeight}, ${sourceWidth * sourceHeight} pixels) exceed maximum allowed limit of ${MAX_IMAGE_DIMENSION}x${MAX_IMAGE_DIMENSION} pixels.`,
     );
   }
 

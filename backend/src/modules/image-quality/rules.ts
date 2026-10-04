@@ -19,6 +19,12 @@ import {
 /** Maximum permitted input file size (10 MB). */
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
+/** Maximum permitted input image dimension (4096 px) to prevent decompression bombs. */
+export const MAX_IMAGE_DIMENSION = 4096;
+
+/** Maximum permitted input image total pixels (16 megapixels). */
+export const MAX_IMAGE_PIXELS = 16_777_216;
+
 /** Bounded maximum dimension for internal pixel analysis (prevents excessive memory use). */
 export const MAX_ANALYSIS_DIMENSION = 512;
 

@@ -13,7 +13,8 @@
     "format:check": "prettier --check \"src/**/*.{ts,js,json}\"",
     "format": "prettier --write \"src/**/*.{ts,js,json}\"",
     "test": "vitest run",
-    "sample:validate": "tsx src/scripts/validate-samples.ts"
+    "sample:validate": "tsx src/scripts/validate-samples.ts",
+    "benchmark": "tsx src/scripts/benchmark.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",

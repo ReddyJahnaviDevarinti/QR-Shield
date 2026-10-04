@@ -1,8 +1,8 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 9 — Real Sample Lab + Evaluator-Ready End-to-End Test Cases
-Current Sub-Phase: Prompt 022 Complete (Sample Lab Architecture & Reproducible Validation Suite)
+Current Phase: Phase 10 — Full QA + Security + Performance Hardening
+Current Sub-Phase: Prompt 023 Complete (Full QA, Security Boundaries, Resource Defenses & Deterministic Benchmarks)
 
 Last Updated: 2026-10-04
 
@@ -601,6 +601,41 @@ The following checks and validations were executed locally and passed with zero 
       - Verified that private merchant reference QRs remain strictly protected in the private `reference-qrs` bucket (HTTP 400/403 on unauthenticated access).
       - Zero secret keys, zero private banking credentials, and zero hard-coded merchant UUIDs in frontend production code.
 
+  - **Prompt 023 — Full QA + Security + Performance Hardening**:
+    - **Resource Exhaustion Hardening**:
+      - Added decompression/pixel-bomb protections in `backend/src/modules/qr-decoder/decoder.ts`, `backend/src/modules/image-quality/analyzer.ts`, and `backend/src/modules/image-quality/rules.ts`.
+      - Enforced maximum dimension limit `MAX_IMAGE_DIMENSION = 4096` px and maximum pixel area `MAX_IMAGE_PIXELS = 16_777_216` px directly in Sharp metadata pre-flight inspection before decoding or allocating uncompressed raw pixel memory.
+      - Pathological dimensions are immediately rejected with `InvalidImageError` (`E_INVALID_IMAGE`) or `ImageTooLargeError` (`E_IMAGE_TOO_LARGE`).
+    - **API Route Security & Input Validation**:
+      - `POST /api/v1/verify`: Enforced strict `isSafeMerchantId` UUID validation (with mock prefix support under test mode) on the multipart `merchant_id` field. Conflicting duplicate `merchant_id` fields are rejected with HTTP 400 `E_AMBIGUOUS_MERCHANT_ID`. Error messaging uses dynamic safe error strings instead of static strings.
+      - `GET /api/v1/samples`: Cached the manifest in-memory (`cachedManifest`) to eliminate repeated filesystem I/O.
+      - `GET /api/v1/samples/:sampleId` & `GET /api/v1/samples/:sampleId/image`: Added strict regex validation on `:sampleId` (`^[a-zA-Z0-9_-]+$`) rejecting malformed IDs with HTTP 400 `E_INVALID_SAMPLE_ID`. Added directory jail validation (`path.resolve(imagesDir, sample.image_file).startsWith(imagesDir + path.sep)`) preventing directory traversal attacks. Standardized error shapes to `{ error: { code, message } }`.
+    - **Reference QR BOLA/IDOR Hardening**:
+      - Re-audited Prompt 021/021A bearer auth and merchant ownership checks across GET, POST, DELETE at `/api/v1/merchants/:merchantId/reference-qr`. Confirmed all mutations occur strictly after ownership verification; storage objects are private; signed URLs are ephemeral (300s TTL).
+    - **Gemini Boundary & Resilience**:
+      - Verified Gemini remains explanation-only. Tested timeout resilience: if Gemini takes longer than 4000ms or fails, the verification pipeline immediately falls back to deterministic rule-based explanations in <300ms without modifying canonical status. Contradictory model outputs are refused and canonical status is preserved.
+    - **Deterministic Performance Benchmark Suite (`backend/src/scripts/benchmark.ts`)**:
+      - Created deterministic benchmark measuring 50 iterations for visual analysis and 500 iterations for CPU logic:
+        - 1. QR Decoding (`decodeQr`): Mean 18.48ms | Median 16.89ms | p95 31.16ms
+        - 2. Image Quality (`analyzeImageQuality`): Mean 16.79ms | Median 16.39ms | p95 22.49ms
+        - 3. Tamper Analysis (`analyzeQrVisualDifference`): Mean 69.32ms | Median 68.27ms | p95 86.70ms
+        - 4. Registry Lookup (`verifyDestination`): Mean 0.00ms (<0.03ms)
+        - 5. Composite Engine (`composeVerificationResult`): Mean 0.00ms (<0.05ms)
+        - Total Deterministic Pipeline Mean: **~104.59 ms**.
+      - Added `"benchmark": "tsx src/scripts/benchmark.ts"` script to `backend/package.json`.
+    - **Automated Hardening & Edge Test Suite (`backend/src/routes/hardening.test.ts`)**:
+      - Implemented 18 comprehensive regression tests verifying multipart handling, missing/empty image payloads, unsupported MIME types, corrupted bytes, duplicate files, malformed/SQL injection merchant IDs, blank image no-QR, dimension limits (4097px rejection), sample path traversal, 404 unknown samples, mock Gemini timeout fallback (<300ms), and contradictory model output refusal.
+    - **Frontend Bundle Security Check (`frontend/src/security.test.ts`)**:
+      - Added test 27 verifying the built `frontend/dist/assets/*.js` contains zero backend secrets (`SUPABASE_SECRET_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `service_role`).
+    - **Live Security Validation**:
+      - Executed against live Supabase: verified IDOR protection (403 Forbidden on foreign merchant), unauthorized access (401 Unauthorized), non-existent merchant (404 Not Found), owner access (200 OK), and zero DB/Storage mutations on foreign tenant.
+    - **Verified Tests**:
+      - Frontend Vitest: 46 / 46 passed across 6 test files.
+      - Backend Vitest: 277 / 277 passed across 11 test files.
+      - Sample Validation: 5 / 5 passed (VERIFIED, DESTINATION_MISMATCH, UNVERIFIED, SUSPICIOUS, INSUFFICIENT_EVIDENCE).
+      - Frontend Build, Lint, Format: 0 errors, 0 warnings.
+      - Backend Build, Lint, Format: 0 errors, 0 warnings.
+
 ---
 
 ## 7. Known Issues & Limitations
@@ -609,6 +644,7 @@ The following checks and validations were executed locally and passed with zero 
 2. **Reference QR Decodability Prerequisite**: A reference QR must contain a readable, well-formed QR code so its finder patterns and baseline payload hash can be extracted. Degraded or blurry images cannot be registered as reference baselines.
 3. **Synthetic Test Payloads**: All Sample Lab specimens utilize harmless synthetic payment handles (e.g. `qrshield-sample@icici`, `attacker-sample@upi`) to demonstrate attack vectors and defenses without exposing real financial data.
 4. **No Financial Guarantee Implied**: Registering a reference QR establishes a physical appearance baseline only. It does not certify legal ownership of the underlying bank account or guarantee payment settlement.
+5. **Upstream Gemini Availability**: Upstream Gemini capacity limits or 503 errors trigger deterministic fallback seamlessly, ensuring canonical verification verdicts and latency remain completely unaffected.
 
 ---
 
@@ -621,21 +657,15 @@ The following checks and validations were executed locally and passed with zero 
 5. **Private Storage & Short-Lived Signed URLs**: Reference QR images are stored in a private bucket (`reference-qrs`). Signed preview URLs are created on-demand with a 300-second TTL exclusively for authenticated merchant dashboard preview. No permanent or public URLs are generated.
 6. **Public Sample Lab Storage**: The `sample-lab` bucket is intentionally public for evaluator access to harmless synthetic test vectors, while `reference-qrs` remains strictly private.
 7. **No Synthetic Result Cards**: The Sample Lab always executes the real backend endpoint (`POST /api/v1/verify`) and displays the actual server response. Expected statuses serve exclusively as QA benchmarks.
+8. **Resource Exhaustion Limits**: Enforced 4096px dimension and 16.7M pixel limits on all incoming image processing buffers before raw pixel decompression.
+9. **Strict Parameter Validation & Directory Jailing**: Merchant IDs are strictly validated to UUID format, conflicting duplicate multipart fields are rejected with HTTP 400, and Sample Lab image streaming enforces directory jail boundaries against path traversal.
+10. **Automated Bundle Security Verification**: Frontend build assets are tested automatically to guarantee zero secret leakage into static client bundles.
 
 ---
 
 ## 9. Next Task
 
-**Phase 11**: Production Hardening & Security Audit (Prior to any deployment)." status with explicit "Authentication not configured".
-4. **Client-Side Auth & RLS Model**: Client queries use the standard Supabase anonymous/publishable key; access control and tenant isolation are enforced strictly by PostgreSQL RLS (`auth.uid() = user_id`). No Supabase secret or service-role keys are exposed to the frontend.
-5. **Private Storage & Short-Lived Signed URLs**: Reference QR images are stored in a private bucket (`reference-qrs`). Signed preview URLs are created on-demand with a 300-second TTL exclusively for authenticated merchant dashboard preview. No permanent or public URLs are generated.
-6. **Deterministic Composite Precedence**: Destination mismatch (`DESTINATION_MISMATCH`) strictly overrides visual tamper evidence. Gemini provides natural language explanation of evidence but cannot alter or override the deterministic canonical status.
-
----
-
-## 9. Next Task
-
-**Phase 9**: Sample Lab Test Harness & Attack Scenario Showcase.
+**Phase 11 / Prompt 024**: Deployment Preparation & Production Infrastructure (Render backend service, Vercel frontend app, custom domain configuration, production Supabase environment).
 
 ---
 

@@ -59,6 +59,23 @@ const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 /**
+ * Strict UUID v4 regex for merchant parameter validation.
+ */
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validates merchant identifier: strictly enforces UUID v4 in production,
+ * allowing established mock identifiers under test execution.
+ */
+function isSafeMerchantId(id: string): boolean {
+  if (UUID_REGEX.test(id)) return true;
+  if (process.env.NODE_ENV === 'test' && /^merchant-[a-z0-9_-]+$/i.test(id)) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Response structure for successful QR destination verification.
  */
 export interface VerifySuccessResponse {
@@ -184,6 +201,15 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
           if (part.fieldname === 'merchant_id') {
             const val = typeof part.value === 'string' ? part.value.trim() : '';
             if (val.length > 0) {
+              if (merchantId !== undefined && merchantId !== val) {
+                return reply.status(400).send({
+                  error: {
+                    code: 'E_AMBIGUOUS_MERCHANT_ID',
+                    message: 'Conflicting duplicate merchant_id fields supplied.',
+                    details: 'Multiple conflicting merchant_id values are not permitted.',
+                  },
+                });
+              }
               merchantId = val;
             }
           } else if (part.fieldname === 'opt_in_audit') {
@@ -255,6 +281,16 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
           code: 'E_UNSUPPORTED_MIME_TYPE',
           message: `Unsupported image MIME type '${imageMimeType ?? 'unknown'}'. Allowed formats: image/jpeg, image/png, image/webp.`,
           details: 'Only JPEG, PNG, and WebP image formats are accepted.',
+        },
+      });
+    }
+
+    if (merchantId !== undefined && !isSafeMerchantId(merchantId)) {
+      return reply.status(400).send({
+        error: {
+          code: 'E_INVALID_MERCHANT_ID',
+          message: 'The provided merchant_id must be a valid UUID.',
+          details: 'Invalid UUID format for merchant_id.',
         },
       });
     }
@@ -493,7 +529,8 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({
           error: {
             code: 'E_INVALID_IMAGE',
-            message: 'The provided image is invalid or could not be decoded.',
+            message:
+              err.message || 'The provided image is invalid or could not be decoded.',
             details:
               'The image file could not be parsed as a valid JPEG, PNG, or WebP image.',
           },

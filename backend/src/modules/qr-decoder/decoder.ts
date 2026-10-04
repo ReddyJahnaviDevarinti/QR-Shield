@@ -32,6 +32,12 @@ import {
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 /**
+ * Maximum permitted image dimensions (4096 x 4096 px, 16 megapixels) to prevent decompression bombs.
+ */
+export const MAX_IMAGE_DIMENSION = 4096;
+export const MAX_IMAGE_PIXELS = 16_777_216;
+
+/**
  * Supported image formats strictly validated by the decoder.
  */
 const SUPPORTED_FORMATS: readonly SupportedImageFormat[] = ['jpeg', 'png', 'webp'];
@@ -75,6 +81,25 @@ export async function decodeQr(buffer: Buffer): Promise<DecodedQr> {
   if (!format || !SUPPORTED_FORMATS.includes(format)) {
     throw new InvalidImageError(
       `Unsupported image format '${format ?? 'unknown'}'. Supported formats: image/jpeg, image/png, image/webp.`,
+    );
+  }
+
+  // Dimension & pixel bounds verification (decompression bomb protection)
+  const width = metadata.width;
+  const height = metadata.height;
+  if (!width || !height || width <= 0 || height <= 0) {
+    throw new InvalidImageError(
+      `Invalid image dimensions: ${width ?? 'unknown'}x${height ?? 'unknown'}.`,
+    );
+  }
+
+  if (
+    width > MAX_IMAGE_DIMENSION ||
+    height > MAX_IMAGE_DIMENSION ||
+    width * height > MAX_IMAGE_PIXELS
+  ) {
+    throw new InvalidImageError(
+      `Image dimensions (${width}x${height}, ${width * height} pixels) exceed maximum allowed limit of ${MAX_IMAGE_DIMENSION}x${MAX_IMAGE_DIMENSION} pixels.`,
     );
   }
 
