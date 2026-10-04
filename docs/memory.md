@@ -176,6 +176,27 @@ The following items and components have been implemented, verified, and locked i
     - `analyzer.test.ts`: 25 comprehensive tests covering identical images, moderate brightness robustness, moderate contrast robustness, slight rotation, scaling differences, simulated sticker border overlay anomaly, different payload structural matrix divergence, invalid reference/candidate images, missing reference/candidate QR, degenerate alignment, determinism, network isolation, filesystem isolation, buffer immutability, result type integrity, and exact threshold boundary testing (just below, at, just above).
   - Total backend tests: 134 passing across 7 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
 
+- **Prompt 016 Deterministic Composite Verification Engine (`backend/src/modules/composite-verification/`)**:
+  - Implemented the composite verification decision layer combining:
+    1. Deterministic destination verification (`VerificationResult` from `verification-engine`)
+    2. Deterministic image-quality evidence (`ImageQualityResult` from `image-quality`)
+    3. Optional physical QR tamper evidence (`TamperAnalysisResult` from `tamper-analysis`)
+    into ONE unified canonical status: `VERIFIED`, `DESTINATION_MISMATCH`, `UNVERIFIED`, `SUSPICIOUS`, or `INSUFFICIENT_EVIDENCE`.
+  - Strictly enforced architectural trust constraints:
+    - Never alleges "fraud confirmed", "fake QR", "scam confirmed", or claims guaranteed safety / bank ownership.
+    - Destination conflict strictly takes precedence over visual evidence (`DESTINATION_MISMATCH`).
+    - Unregistered QR remains `UNVERIFIED` even if image quality or visual evidence is abnormal; visual deviation does not manufacture suspicion for unregistered codes.
+    - Insufficient image quality yields `INSUFFICIENT_EVIDENCE`, preventing false positive tampering declarations.
+    - Suspicion (`SUSPICIOUS`) requires a matching destination combined with verified visual anomalies (`boundaryAnomalyDetected = true` or `visualDeviationIndex >= VISUAL_DEVIATION_HIGH_THRESHOLD`).
+    - Degraded quality or inconclusive tamper analysis is treated as supporting evidence (`IMAGE_QUALITY_DEGRADED`, `TAMPER_ANALYSIS_INCONCLUSIVE`) without flipping verified codes to suspicious.
+  - Modular structure:
+    - `types.ts`: `CanonicalCompositeStatus`, `CompositeRecommendation`, `CompositeRiskFactor`, `CompositeEvidence`, `CompositeVerificationResult`, `CompositeVerificationInput`.
+    - `rules.ts`: Deterministic status precedence (Rules C01 - C06), deduplicated risk factor aggregation, recommendation mapping, and re-export of `VISUAL_DEVIATION_HIGH_THRESHOLD` without threshold duplication.
+    - `engine.ts`: Pure in-memory orchestration `composeVerificationResult()` supporting both positional arguments and input object with zero mutations on source parameters.
+    - `index.ts`: Clean module exports.
+    - `engine.test.ts`: 34 comprehensive tests covering the 22 core requirements, full 8-case status precedence matrix (Rules C01 - C06), exact visual deviation boundary tests (just below, at, just above), input immutability, network/filesystem isolation, and object overload.
+  - Total backend tests: 168 passing across 8 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
+
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
@@ -195,7 +216,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 015 (QRShield Deterministic Physical QR Tamper Analysis)**. Ready for next phase (composite verification engine integration / risk calibration).
+Completed **Prompt 016 (QRShield Deterministic Composite Verification Engine)**. Ready for next phase (pipeline integration / calibrated risk engine).
 
 ---
 
