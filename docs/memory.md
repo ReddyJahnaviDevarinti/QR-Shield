@@ -75,12 +75,21 @@ The following items and components have been implemented, verified, and locked i
   - Implemented server startup and graceful shutdown on `SIGINT` / `SIGTERM` (`src/server.ts`).
   - Created `backend/.env.example` with non-secret placeholders only.
   - Validated locally: `npm run lint`, `npm run format:check`, `npm run build`, and verified `GET /api/v1/health` returns status `ok`.
+- **Prompt 009 Deterministic QR Decoder (`backend/src/modules/qr-decoder/`)**:
+  - Implemented pure in-memory deterministic QR matrix decoding engine using `sharp` (pixel normalization to RGBA) and `jsqr` (matrix decoding).
+  - Defined strong types (`types.ts`): `DecodedQr`, `QrPoint`, `QrLocation`, format unions.
+  - Defined controlled error hierarchy (`errors.ts`): `QrDecoderError`, `InvalidImageError` (`E_INVALID_IMAGE`), `NoQrDetectedError` (`E_NO_QR_DETECTED`), `DecodeFailedError` (`E_DECODE_FAILED`) with no stack trace leakage.
+  - Decoupled decoder API (`decoder.ts`): `decodeQr(buffer: Buffer): Promise<DecodedQr>` independent from Fastify and free of business-specific UPI logic.
+  - Zero LLM / Gemini involvement in QR decoding; strictly deterministic.
+  - Configured Vitest test runner (`vitest.config.ts`, `npm run test`).
+  - Implemented comprehensive unit test suite (`decoder.test.ts`): 9 tests covering UPI URIs, URLs, plain text, invalid bytes, empty buffers, format conversions (PNG, JPEG, WebP), non-QR solid images, and input guards.
+  - Verified manual decoding of `upi://pay?pa=store@icici&pn=Test%20Store&mc=5411` with exact matching payload, 400x400 dimensions, and 3 finder patterns.
 
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
 - Merchant & Payment Destination Registry Backend (Phase 3)
-- Real QR Upload, Camera Capture & Deterministic Decoding (Phase 4)
+- Verification API Endpoint (`POST /api/v1/verify`) and UPI Payload Parser (Phase 4 / Phase 5)
 - Payment Destination Verification Engine (Phase 5)
 - Physical Tamper & Baseline Reference Comparison (Phase 6)
 - Calibrated Risk Engine (Phase 7)
@@ -98,7 +107,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 008 (QRShield Backend Foundation)**. Ready to proceed with application features and Phase 1 integration.
+Completed **Prompt 009 (QRShield Deterministic QR Decoder)**. Ready for next phase (payment payload parser or Phase 1 Supabase Auth).
 
 ---
 
@@ -123,11 +132,19 @@ QR-Shield/
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── tsconfig.json
+│   ├── vitest.config.ts
 │   └── src/
 │       ├── app.ts
 │       ├── server.ts
 │       ├── config/
 │       │   └── env.ts
+│       ├── modules/
+│       │   └── qr-decoder/
+│       │       ├── decoder.test.ts
+│       │       ├── decoder.ts
+│       │       ├── errors.ts
+│       │       ├── index.ts
+│       │       └── types.ts
 │       ├── plugins/
 │       │   └── security.ts
 │       └── routes/
@@ -211,6 +228,9 @@ QR-Shield/
 | **Prettier 3** | Code formatting | Active & validated (`npm run format:check` passes) |
 | **Supabase Client** | Official browser DB/Auth client | Active & validated (`@supabase/supabase-js`) |
 | **Node.js Fastify** | Backend REST API | Active & validated in `backend/` |
+| **Sharp** | Image decoding & RGBA normalization | Active & validated (`sharp` in `backend/`) |
+| **jsQR** | Deterministic bit-matrix QR decoding | Active & validated (`jsqr` in `backend/`) |
+| **Vitest** | Automated backend unit testing | Active & validated (`vitest` in `backend/`) |
 | **Supabase PostgreSQL** | Database persistence & RLS | Active & reachable (Schema created) |
 | **Supabase Auth** | Merchant authentication | Foundation active (Auth UI in Phase 1) |
 | **Supabase Storage** | Reference image vault | Not configured yet (Planned: Phase 3) |
