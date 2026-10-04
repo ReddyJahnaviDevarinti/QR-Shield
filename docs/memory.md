@@ -63,6 +63,18 @@ The following items and components have been implemented, verified, and locked i
   - Configured `frontend/src/lib/supabase.ts` with typed client reading `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`.
   - Validated connection against existing schema tables (`merchants`, `payment_destinations`, `reference_qrs`, `verification_logs`) returning status 200 with RLS enforced and zero mutations.
   - Updated `vite-env.d.ts` with publishable key type declaration.
+- **Prompt 008 Backend Foundation (Fastify + TypeScript)**:
+  - Initialized Node.js + TypeScript Fastify service in `backend/` targeting Render deployment.
+  - Installed minimal runtime dependencies: `fastify`, `@fastify/cors`, `@fastify/helmet`.
+  - Installed development tooling: `typescript`, `@types/node`, `tsx`, `eslint`, `prettier`, `typescript-eslint`.
+  - Implemented typed environment configuration (`src/config/env.ts`) reading `PORT` (8000), `NODE_ENV` (development), and `ALLOWED_ORIGINS` (http://localhost:5173).
+  - Implemented application factory pattern (`src/app.ts`) separated from server network listener for isolated testing.
+  - Configured structured Fastify logging with sensitive token/secret redaction.
+  - Configured centralized error handler returning uniform JSON shapes without leaking stack traces in production.
+  - Implemented `GET /api/v1/health` (`src/routes/health.ts`) returning dynamic ISO timestamp, version `1.0.0`, and process uptime seconds without requiring Supabase or Gemini.
+  - Implemented server startup and graceful shutdown on `SIGINT` / `SIGTERM` (`src/server.ts`).
+  - Created `backend/.env.example` with non-secret placeholders only.
+  - Validated locally: `npm run lint`, `npm run format:check`, `npm run build`, and verified `GET /api/v1/health` returns status `ok`.
 
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
@@ -86,7 +98,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 006A (QRShield UI Foundation QA Fixes)**. Ready for human review before proceeding to Phase 1 (Supabase Auth and session management).
+Completed **Prompt 008 (QRShield Backend Foundation)**. Ready to proceed with application features and Phase 1 integration.
 
 ---
 
@@ -105,7 +117,21 @@ QR-Shield/
 │   ├── project-requirements.md
 │   └── rules.md
 ├── backend/
-│   └── .gitkeep
+│   ├── .env.example
+│   ├── .prettierrc
+│   ├── eslint.config.js
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── app.ts
+│       ├── server.ts
+│       ├── config/
+│       │   └── env.ts
+│       ├── plugins/
+│       │   └── security.ts
+│       └── routes/
+│           └── health.ts
 ├── sample-data/
 │   └── .gitkeep
 ├── tests/
@@ -184,7 +210,7 @@ QR-Shield/
 | **ESLint 9** | Code quality & static analysis | Active & validated (`npm run lint` passes) |
 | **Prettier 3** | Code formatting | Active & validated (`npm run format:check` passes) |
 | **Supabase Client** | Official browser DB/Auth client | Active & validated (`@supabase/supabase-js`) |
-| **Node.js Fastify** | Backend REST API | Planned (Target: Render in Phase 4/5) |
+| **Node.js Fastify** | Backend REST API | Active & validated in `backend/` |
 | **Supabase PostgreSQL** | Database persistence & RLS | Active & reachable (Schema created) |
 | **Supabase Auth** | Merchant authentication | Foundation active (Auth UI in Phase 1) |
 | **Supabase Storage** | Reference image vault | Not configured yet (Planned: Phase 3) |
