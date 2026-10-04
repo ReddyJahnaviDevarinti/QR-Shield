@@ -85,3 +85,16 @@ export interface PaymentDestinationRecord {
   is_active: boolean;
   registered_at: string;
 }
+
+/**
+ * Supabase Reference QRs Table Record
+ */
+export interface ReferenceQrRecord {
+  id: string;
+  merchant_id: string;
+  storage_path: string;
+  payload_hash: string;
+  raw_payload: string;
+  uploaded_at: string;
+  preview_url: string | null;
+}

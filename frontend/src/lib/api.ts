@@ -1,4 +1,4 @@
-import { VerificationStatus } from '../types';
+import { VerificationStatus, ReferenceQrRecord } from '../types';
 
 export type CanonicalCompositeStatus = VerificationStatus;
 
@@ -71,6 +71,15 @@ export interface VerifySuccessResponse {
     };
     tamper: {
       available: boolean;
+      reference_available?: boolean;
+      visual_deviation_index?: number | null;
+      alignment_quality?: number | null;
+      alignment_classification?: string | null;
+      matrix_mismatch_ratio?: number | null;
+      boundary_anomaly_detected?: boolean | null;
+      boundary_anomaly_score?: number | null;
+      anomaly_indicators?: string[];
+      recommendation?: string;
     };
   };
   risk_factors: CompositeRiskFactor[];
@@ -238,4 +247,136 @@ export async function verifyQr(
   }
 
   return result;
+}
+
+/**
+ * Fetches the active reference QR record for a merchant.
+ */
+export async function fetchReferenceQr(
+  merchantId: string,
+  accessToken?: string,
+): Promise<ReferenceQrRecord | null> {
+  const baseUrl = getApiBaseUrl();
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/merchants/${encodeURIComponent(merchantId)}/reference-qr`,
+    {
+      headers,
+    },
+  );
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to fetch reference QR.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
+  const data = (await response.json()) as { reference_qr: ReferenceQrRecord | null };
+  return data.reference_qr;
+}
+
+/**
+ * Uploads a reference QR image for a merchant.
+ */
+export async function uploadReferenceQr(
+  merchantId: string,
+  file: File,
+  accessToken?: string,
+): Promise<ReferenceQrRecord> {
+  if (!file) {
+    throw new ApiClientError('Please select a valid image file.', 400, 'E_MISSING_IMAGE');
+  }
+  if (file.size === 0) {
+    throw new ApiClientError('The selected image file is empty.', 400, 'E_EMPTY_IMAGE');
+  }
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    throw new ApiClientError(
+      'Image file size exceeds the 10 MB limit.',
+      413,
+      'E_PAYLOAD_TOO_LARGE',
+    );
+  }
+  const mimeType = file.type.toLowerCase();
+  if (mimeType && !ALLOWED_MIME_TYPES.has(mimeType)) {
+    throw new ApiClientError(
+      `Unsupported file type '${file.type}'. Please upload a PNG, JPG, or WEBP image.`,
+      400,
+      'E_UNSUPPORTED_MIME_TYPE',
+    );
+  }
+
+  const formData = new FormData();
+  formData.append('image', file, file.name);
+
+  const baseUrl = getApiBaseUrl();
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/merchants/${encodeURIComponent(merchantId)}/reference-qr`,
+    {
+      method: 'POST',
+      body: formData,
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to upload reference QR.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
+
+  const data = (await response.json()) as { reference_qr: ReferenceQrRecord };
+  return data.reference_qr;
+}
+
+/**
+ * Deletes the active reference QR record and storage file for a merchant.
+ */
+export async function deleteReferenceQr(
+  merchantId: string,
+  accessToken?: string,
+): Promise<void> {
+  const baseUrl = getApiBaseUrl();
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/merchants/${encodeURIComponent(merchantId)}/reference-qr`,
+    {
+      method: 'DELETE',
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to delete reference QR.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
 }

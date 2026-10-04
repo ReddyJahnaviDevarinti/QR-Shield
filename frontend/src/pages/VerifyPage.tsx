@@ -46,7 +46,7 @@ function formatRecommendation(rec: string): string {
 }
 
 export const VerifyPage: React.FC = () => {
-  const { merchant } = useAuth();
+  const { merchant, referenceQr } = useAuth();
   const [merchantId, setMerchantId] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -139,7 +139,7 @@ export const VerifyPage: React.FC = () => {
               <div>
                 <Input
                   label="Merchant Reference Identifier (Optional)"
-                  placeholder="e.g., a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  placeholder="Enter merchant UUID..."
                   value={merchantId}
                   onChange={(e) => setMerchantId(e.target.value)}
                   helperText="If specified, verifies parity against this merchant's registered destination."
@@ -158,21 +158,51 @@ export const VerifyPage: React.FC = () => {
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       fontSize: '0.75rem',
+                      flexWrap: 'wrap',
+                      gap: 'var(--space-2)',
                     }}
                   >
                     <span style={{ color: 'var(--color-text-secondary)' }}>
-                      Active Profile: <strong>{merchant.business_name}</strong>
-                    </span>
-                    {merchantId === merchant.id ? (
+                      Active Profile: <strong>{merchant.business_name}</strong>{' '}
                       <span
                         style={{
-                          color: 'var(--color-status-verified)',
-                          fontFamily: 'var(--font-mono)',
                           fontSize: '0.6875rem',
+                          fontFamily: 'var(--font-mono)',
+                          color: referenceQr
+                            ? 'var(--color-status-verified)'
+                            : 'var(--color-text-muted)',
                         }}
                       >
-                        MATCHED
+                        ({referenceQr ? 'Reference QR Active' : 'No Reference QR'})
                       </span>
+                    </span>
+                    {merchantId === merchant.id ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 'var(--space-2)',
+                        }}
+                      >
+                        <span
+                          style={{
+                            color: 'var(--color-status-verified)',
+                            fontFamily: 'var(--font-mono)',
+                            fontSize: '0.6875rem',
+                          }}
+                        >
+                          MATCHED
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setMerchantId('')}
+                          disabled={isLoading}
+                          title="Verify anonymously"
+                        >
+                          Clear
+                        </Button>
+                      </div>
                     ) : (
                       <Button
                         variant="ghost"
@@ -607,14 +637,75 @@ export const VerifyPage: React.FC = () => {
                   isMonospace
                 />
                 <DataRow
-                  label="Physical Tamper Layer"
+                  label="Physical Comparison"
                   value={
                     result.composite_evidence.tamper.available
-                      ? 'Evaluated'
-                      : 'Pending reference asset registration'
+                      ? 'AVAILABLE'
+                      : result.composite_evidence.tamper.reference_available === false
+                        ? 'NOT AVAILABLE — merchant has no registered reference QR.'
+                        : 'NOT AVAILABLE — scan conducted without registered reference QR.'
                   }
                   isMonospace={false}
                 />
+                {result.composite_evidence.tamper.available && (
+                  <>
+                    <DataRow
+                      label="Visual Deviation Index"
+                      value={
+                        result.composite_evidence.tamper.visual_deviation_index !==
+                          null &&
+                        result.composite_evidence.tamper.visual_deviation_index !==
+                          undefined
+                          ? result.composite_evidence.tamper.visual_deviation_index.toFixed(
+                              4,
+                            )
+                          : '—'
+                      }
+                      isMonospace
+                    />
+                    <DataRow
+                      label="Alignment Classification"
+                      value={
+                        result.composite_evidence.tamper.alignment_classification || '—'
+                      }
+                      isMonospace
+                    />
+                    <DataRow
+                      label="Matrix Mismatch Ratio"
+                      value={
+                        result.composite_evidence.tamper.matrix_mismatch_ratio !== null &&
+                        result.composite_evidence.tamper.matrix_mismatch_ratio !==
+                          undefined
+                          ? `${(result.composite_evidence.tamper.matrix_mismatch_ratio * 100).toFixed(1)}%`
+                          : '—'
+                      }
+                      isMonospace
+                    />
+                    <DataRow
+                      label="Boundary Anomaly"
+                      value={
+                        result.composite_evidence.tamper.boundary_anomaly_detected
+                          ? `DETECTED (${(result.composite_evidence.tamper.boundary_anomaly_score ?? 0).toFixed(3)})`
+                          : 'NONE DETECTED'
+                      }
+                      isMonospace
+                    />
+                    {result.composite_evidence.tamper.anomaly_indicators &&
+                      result.composite_evidence.tamper.anomaly_indicators.length > 0 && (
+                        <div
+                          style={{
+                            marginTop: 'var(--space-2)',
+                            fontSize: '0.6875rem',
+                            fontFamily: 'var(--font-mono)',
+                            color: 'var(--color-status-suspicious)',
+                          }}
+                        >
+                          Tamper Indicators:{' '}
+                          {result.composite_evidence.tamper.anomaly_indicators.join(', ')}
+                        </div>
+                      )}
+                  </>
+                )}
                 {result.image_quality.quality_flags.length > 0 && (
                   <div
                     style={{

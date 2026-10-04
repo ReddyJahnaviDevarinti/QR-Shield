@@ -1,8 +1,8 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 9 — Frontend Live Verification Integration
-Current Sub-Phase: Prompt 019 Complete (Frontend → Live Verification API Integration)
+Current Phase: Phase 3 / Phase 10 — Reference QR Storage + Real Physical Tamper Verification
+Current Sub-Phase: Prompt 021 Complete (Reference QR Storage & Physical Tamper Analysis)
 
 Last Updated: 2026-10-04
 
@@ -294,9 +294,58 @@ The following items and components have been implemented, verified, and locked i
   - Automated Tests: Added 14 new frontend tests (2 in `security.test.ts`, 4 in `AuthPage.test.tsx`, 8 in `DashboardPage.test.tsx`). Total frontend test suite: 29 tests passing across 5 test suites.
   - Verified full 14-step live Supabase manual flow against real Supabase instance: confirmed sign-in, profile insertion under RLS, destination registration, destination toggle, reload persistence, unauthenticated RLS query prevention (0 records returned), and persistent re-authentication.
 
+- **Prompt 021 Reference QR Storage + Real Physical Tamper Verification (`backend/`, `frontend/`)**:
+  - Implemented secure, private reference QR storage in Supabase Storage (`reference-qrs` bucket) and PostgreSQL `reference_qrs` table.
+  - Storage & Security Architecture:
+    - Dedicated private bucket `reference-qrs` (`public: false`). Zero public URLs are created or exposed.
+    - Deterministic ownership path: `${merchantId}/reference-qr-${timestamp}.${ext}` preventing merchant collisions.
+    - Short-lived signed preview URLs (`createSignedUrl(..., 300)`) generated on demand for authenticated merchant dashboard preview.
+    - Zero service-role credentials exposed to the frontend; backend handles trusted storage retrieval.
+  - Deterministic Reference Validation:
+    - Pre-upload and pre-storage validation rejects zero-byte files, unsupported MIME types (allowed: `image/png`, `image/jpeg`, `image/webp`), oversized files (> 10MB), and invalid image buffers.
+    - Deterministic QR detection (`decodeQr`) verifies candidate image contains a readable QR and extracts finder coordinates before storage.
+    - Rejects QR-less or unreadable images with explicit error: *"Reference QR could not be established. Upload a clear QR image."*
+  - Atomic Registration & Partial-Failure Cleanup:
+    - Single active reference QR per merchant model.
+    - On replacement: validates new image, uploads new object, persists database record in `reference_qrs` with SHA-256 payload hash and finder coordinates, and cleans up old storage objects and prior active records.
+    - If database metadata persistence fails, newly uploaded storage object is automatically cleaned up to prevent orphaned assets.
+  - Endpoints Implemented (`backend/src/routes/reference-qr.ts`):
+    - `GET /api/v1/merchants/:merchantId/reference-qr`: Returns active reference QR record with fresh signed preview URL (expires in 300s) or `null`.
+    - `POST /api/v1/merchants/:merchantId/reference-qr`: Multipart image upload; executes quality check, storage upload, DB upsert, and returns HTTP 201 Created with metadata and signed preview URL.
+    - `DELETE /api/v1/merchants/:merchantId/reference-qr`: Deactivates/removes active reference QR record from DB and deletes backing storage file.
+  - Backend Verification Pipeline Tamper Integration (`backend/src/routes/verify.ts`):
+    - When merchant context is supplied (`merchant_id`), pipeline resolves merchant's active reference QR from `reference_qrs` table.
+    - Downloads private reference image bytes from Supabase Storage `reference-qrs` bucket.
+    - Runs existing deterministic `analyzeQrVisualDifference(candidateBuffer, referenceBuffer)`.
+    - Feeds `tamperResult` into `composeVerificationResult(destinationResult, imageQualityResult, tamperResult)`.
+    - If no reference QR is registered, pipeline continues destination verification normally with `tamper.available = false` and does NOT invent a suspicious score.
+    - Preserves canonical composite status precedence: `DESTINATION_MISMATCH` > `SUSPICIOUS` > `VERIFIED`.
+    - Extends `/api/v1/verify` response with factual structured tamper evidence (`visual_deviation_index`, `alignment_classification`, `boundary_anomaly_score`, `structural_difference`, `matrix_mismatch_ratio`, `analysis_quality`, `tamper_indicators`) without exposing raw files or public URLs.
+    - Gemini remains downstream of deterministic evidence: receives structured tamper metrics for neutral explanation; never receives private reference image bytes, never decides canonical status.
+  - Merchant Dashboard UI (`frontend/src/pages/DashboardPage.tsx`):
+    - Added 3-component Trust Posture Summary bar (Merchant Profile, Trusted Destination, Reference QR) providing immediate understanding of baseline posture.
+    - Replaced placeholder Section 3 with active Reference QR management card: displays registration status, short-lived signed image preview, decoded payload hash, upload timestamp, replacement dropzone, and remove/deactivate action.
+  - Verify Console Integration (`frontend/src/pages/VerifyPage.tsx`):
+    - Context helper indicates reference QR registration status for selected merchant.
+    - Section E (Visual Evidence) displays physical comparison status (`AVAILABLE` vs `NOT AVAILABLE — merchant has no registered reference QR`) and exposes factual tamper metrics (`visual_deviation_index`, `alignment_classification`, `matrix_mismatch_ratio`, `boundary_anomaly_score`, `tamper_indicators`).
+  - Automated Tests:
+    - Added 20 new backend tests in `backend/src/routes/reference-qr.test.ts` covering valid upload, unsupported types, zero-byte files, oversized files, invalid bytes, QR-less images, replacement cleanup, upload failure handling, database failure rollback, merchant isolation, tamper analysis execution, identical match (`VERIFIED`), tampered match (`SUSPICIOUS`), destination mismatch precedence (`DESTINATION_MISMATCH`), and Gemini override prevention.
+    - Total backend tests: 222 passed across 10 test suites (zero regressions on baseline 202 tests).
+    - Total frontend tests: 29 passed across 5 test suites.
+  - Real Live Supabase Manual Test (Part 19):
+    - Executed live automated diagnostic script `backend/src/scripts/live-p21-test.ts` against real Supabase instance:
+      1. Verified merchant profile `79a836e0-68e1-4b00-a122-eadef81eb068` (Apex Retailers Ltd).
+      2. Uploaded real generated official reference QR image (`upi://pay?pa=apexretail@icici...`).
+      3. Confirmed Storage upload to private `reference-qrs` bucket and record in `reference_qrs` table.
+      4. Confirmed reload with signed preview URL generation.
+      5. Verified reference-equivalent candidate image returned `VERIFIED`, `tamper.available: true`, `visual_deviation_index: 0`.
+      6. Verified visually modified candidate image returned real tamper metrics (`visual_deviation_index: 0.0068`).
+      7. Verified attacker QR with mismatched destination returned `DESTINATION_MISMATCH` authoritatively.
+      8. Confirmed anonymous access to private storage object was blocked/denied.
+      9. Cleanly deleted test reference QR and verified database count returned to 0.
+
 ### Not Completed (Explicitly Pending Future Phases)
-- Reference QR Storage Integration & Upload (Phase 3)
-- Merchant Admin Registry Endpoints (Phase 3)
+- Merchant Admin Registry Endpoints (Phase 3 remaining)
 - Calibrated Risk Engine (Phase 7)
 - Sample Lab Test Harness (Phase 9)
 - Verification Audit History & Verification Logs Table Writing (Phase 10)
@@ -311,7 +360,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 019 (QRShield Frontend → Live Verification API Integration)**. Ready for next phase.
+Completed **Prompt 021 (Reference QR Storage + Real Physical Tamper Verification)**. Ready for next phase.
 
 
 ---
@@ -460,7 +509,7 @@ QR-Shield/
 | **Supabase Server SDK** | Backend registry adapter & service client | Active & validated (`@supabase/supabase-js` in `backend/`) |
 | **Supabase PostgreSQL** | Database persistence & RLS | Active & reachable (Schema & read-adapter connected) |
 | **Supabase Auth** | Merchant authentication | Foundation active (Auth UI in Phase 1) |
-| **Supabase Storage** | Reference image vault | Not configured yet (Planned: Phase 3) |
+| **Supabase Storage** | Reference image vault | Active & validated (Private `reference-qrs` bucket) |
 | **Google Gemini API** | Contextual explanation layer | Active & validated (`@google/genai` in `backend/`) |
 | **Vitest (Frontend)** | Frontend unit & component testing | Active & validated (`vitest`, `@testing-library/react` in `frontend/`) |
 
@@ -490,17 +539,45 @@ The following checks and validations were executed locally and passed with zero 
 2. **Frontend TypeScript Compilation & Build**: `npm run build` (`tsc -b && vite build`) completed with exit code 0 (`dist/` compiled cleanly: 1980 modules transformed).
 3. **Frontend Linting Check**: `npm run lint` (`eslint .`) completed with exit code 0 (zero errors, zero warnings).
 4. **Frontend Code Formatting Check**: `npm run format:check` (`prettier --check "src/**/*.{ts,tsx,css}"`) completed with exit code 0.
-5. **Backend Vitest Test Suite**: `npm test` (`vitest run`) in `backend/` passed all 202 tests across 9 test suites with zero regressions.
+5. **Backend Vitest Test Suite**: `npm test` (`vitest run`) in `backend/` passed all 222 tests across 10 test suites with zero regressions (including 202 baseline regression tests and 20 new tests in `reference-qr.test.ts`).
 6. **Backend TypeScript Compilation & Build**: `npm run build` (`tsc`) completed with exit code 0.
 7. **Backend Linting & Formatting Check**: `npm run lint` and `npm run format:check` completed with exit code 0.
 8. **Real Local End-to-End CORS & API Check**: Tested live HTTP POST request with `Origin: http://localhost:5173` to `http://localhost:8000/api/v1/verify` with real QR payload and test merchant ID: confirmed HTTP 200, CORS headers, `VERIFIED` and `DESTINATION_MISMATCH` canonical states against live Supabase registry.
-9. **Genuine Manual Supabase Verification**: Executed live integration with Supabase Auth and PostgreSQL tables under RLS: confirmed user sign-in, onboarding profile registration under `auth.uid() = user_id`, trusted payment destination insertion (`VPA`), destination active state update, reload persistence, unauthenticated query rejection (0 records returned), and clean re-authentication.
+9. **Genuine Manual Supabase Verification (Prompt 020)**: Executed live integration with Supabase Auth and PostgreSQL tables under RLS: confirmed user sign-in, onboarding profile registration under `auth.uid() = user_id`, trusted payment destination insertion (`VPA`), destination active state update, reload persistence, unauthenticated query rejection (0 records returned), and clean re-authentication.
+10. **Prompt 021 Live Supabase Manual Test (Part 19)**: Executed live automated diagnostic script `backend/src/scripts/live-p21-test.ts` against live Supabase:
+    - Official reference QR generation and upload to `POST /api/v1/merchants/:merchantId/reference-qr` -> HTTP 201 Created.
+    - Verified storage object creation in private `reference-qrs` bucket and metadata in `reference_qrs` table.
+    - Verified short-lived signed preview URL generation (valid for 300 seconds).
+    - Verified identical reference QR candidate verification produced `VERIFIED` with `tamper.available = true`, `visual_deviation_index = 0`, `alignment_classification = GOOD`.
+    - Verified visually modified candidate QR produced real visual deviation metrics (`visual_deviation_index = 0.0068`).
+    - Verified attacker QR with mismatched destination produced canonical status `DESTINATION_MISMATCH` authoritatively.
+    - Verified anonymous download attempt on private `reference-qrs` storage bucket was rejected.
+    - Verified clean deactivation and removal via `DELETE /api/v1/merchants/:merchantId/reference-qr`.
+
+  - **Prompt 021A — Critical Security Fix: Reference QR BOLA/IDOR Authorization**:
+    - **Vulnerability Discovered**: The initial Prompt 021 Reference QR endpoints (`GET`, `POST`, `DELETE` at `/api/v1/merchants/:merchantId/reference-qr`) relied on the privileged server-side Supabase client (`supabaseServer`) without validating caller identity or merchant profile ownership. A caller could modify `:merchantId` in the URL to inspect, overwrite, or delete another merchant's reference QR baseline (Broken Object Level Authorization / IDOR).
+    - **Authentication Fix**: Implemented strict bearer token authentication across all reference QR endpoints (`GET`, `POST`, `DELETE`). The bearer token is extracted from the `Authorization: Bearer <token>` header and validated via `supabaseServer.auth.getUser(token)`. Missing, empty, malformed, or invalid tokens immediately reject with HTTP 401 `E_UNAUTHORIZED`. Tokens are never decoded client-side or accepted via query parameters.
+    - **Merchant Ownership Authorization**: Added strict profile ownership validation before any privileged DB or Storage operation. The system resolves the merchant record by `:merchantId` via the service-role client, verifies that the merchant exists (returning HTTP 404 `E_MERCHANT_NOT_FOUND` if absent), and compares `merchant.user_id === authenticatedUser.id`. If the merchant belongs to another user, the request immediately terminates with HTTP 403 `E_FORBIDDEN` and safe message `"Caller does not own this merchant profile."` with zero detail leakage.
+    - **Privileged Client Safety**: Ownership authorization occurs strictly *before* any privileged operations (reading records, generating signed preview URLs, running QR decoder/tamper pipelines, uploading storage objects, or deleting existing files). Unauthorized requests produce zero storage and zero database mutations.
+    - **Frontend Token Propagation**: Updated `frontend/src/lib/api.ts` (`fetchReferenceQr`, `uploadReferenceQr`, `deleteReferenceQr`) to accept optional `accessToken` parameter and attach `Authorization: Bearer <token>`. Updated `frontend/src/context/AuthContext.tsx` to automatically retrieve the active `session.access_token` from Supabase Auth and pass it to all reference QR API calls. Unauthenticated users cannot invoke protected reference QR management methods.
+    - **Backend Authorization Tests**: Added 20 automated authorization test cases (tests 22–41 in `backend/src/routes/reference-qr.test.ts`), verifying:
+      1. Missing Authorization header returns 401 `E_UNAUTHORIZED` on GET, POST, DELETE.
+      2. Malformed or invalid token returns 401 `E_UNAUTHORIZED` on GET, POST, DELETE.
+      3. Nonexistent merchant returns safe 404 `E_MERCHANT_NOT_FOUND`.
+      4. Valid owner token allows GET, POST, and DELETE operations.
+      5. Non-owner token returns 403 `E_FORBIDDEN` on GET, POST, and DELETE.
+      6. Non-owner POST and DELETE cause zero Supabase Storage modifications and zero database mutations.
+      7. Authorization occurs strictly before any privileged Storage/DB access.
+    - **Frontend Security Tests**: Added automated security tests (tests 21–26 in `frontend/src/security.test.ts` and `frontend/src/lib/api.test.ts`) proving that reference API calls send the `Authorization` header, no Supabase service-role keys are exposed in the frontend bundle, and no hardcoded merchant UUIDs exist in frontend source.
+    - **Manual Security Validation**: Executed `backend/src/scripts/live-security-check.ts` against real live Supabase instances with harmless test accounts. Validated that User A accessing Merchant A succeeded (HTTP 200), User A attempting to access Merchant B returned HTTP 403 `E_FORBIDDEN`, unauthorized requests returned HTTP 401 `E_UNAUTHORIZED`, and Merchant B's database records and private Storage files remained 100% untouched.
 
 ---
 
-## 7. Known Issues
+## 7. Known Issues & Limitations
 
-None.
+1. **Physical Lighting & Perspective Limitations**: The deterministic tamper analyzer utilizes geometric alignment via corner finding and homography. Extremely skewed (angle > 45°) or severely shadowed/occluded physical scans may result in low alignment quality or `INSUFFICIENT_EVIDENCE` from the image quality analyzer before visual tamper analysis executes.
+2. **Reference QR Decodability Prerequisite**: A reference QR must contain a readable, well-formed QR code so its finder patterns and baseline payload hash can be extracted. Degraded or blurry images cannot be registered as reference baselines.
+3. **No Financial Guarantee Implied**: Registering a reference QR establishes a physical appearance baseline only. It does not certify legal ownership of the underlying bank account or guarantee payment settlement.
 
 ---
 
@@ -510,12 +587,14 @@ None.
 2. **Honest Workspace UI**: Removed buttons that implied active capabilities before backend implementation.
 3. **Factual Foundation Wording**: Replaced speculative "Session Active" status with explicit "Authentication not configured".
 4. **Client-Side Auth & RLS Model**: Client queries use the standard Supabase anonymous/publishable key; access control and tenant isolation are enforced strictly by PostgreSQL RLS (`auth.uid() = user_id`). No Supabase secret or service-role keys are exposed to the frontend.
+5. **Private Storage & Short-Lived Signed URLs**: Reference QR images are stored in a private bucket (`reference-qrs`). Signed preview URLs are created on-demand with a 300-second TTL exclusively for authenticated merchant dashboard preview. No permanent or public URLs are generated.
+6. **Deterministic Composite Precedence**: Destination mismatch (`DESTINATION_MISMATCH`) strictly overrides visual tamper evidence. Gemini provides natural language explanation of evidence but cannot alter or override the deterministic canonical status.
 
 ---
 
 ## 9. Next Task
 
-**Phase 3**: Reference QR Storage Integration & Official Reference QR Asset Management.
+**Phase 9**: Sample Lab Test Harness & Attack Scenario Showcase.
 
 ---
 

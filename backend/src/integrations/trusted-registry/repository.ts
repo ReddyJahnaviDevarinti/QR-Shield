@@ -1,7 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseServer } from '../supabase/client.js';
 import { RegistryQueryFailedError } from './errors.js';
-import { TrustedRegistryDestination } from './types.js';
+import { ReferenceQrRecord, TrustedRegistryDestination } from './types.js';
 
 interface PaymentDestinationRow {
   merchant_id: string;
@@ -177,5 +177,244 @@ export async function checkRegistryConnection(
     return !error;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Retrieves the latest active reference QR record registered for a merchant.
+ *
+ * @param merchantId - Authoritative merchant identifier.
+ * @param client - Supabase client instance.
+ * @returns Promise resolving to ReferenceQrRecord or null if not registered.
+ */
+export async function findActiveReferenceQrForMerchant(
+  merchantId: string,
+  client: SupabaseClient = supabaseServer,
+): Promise<ReferenceQrRecord | null> {
+  if (!merchantId || merchantId.trim().length === 0) {
+    return null;
+  }
+
+  const { data, error } = await client
+    .from('reference_qrs')
+    .select(
+      'id, merchant_id, storage_path, payload_hash, raw_payload, finder_coordinates, uploaded_at',
+    )
+    .eq('merchant_id', merchantId.trim())
+    .order('uploaded_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    throw new RegistryQueryFailedError(
+      `Failed to retrieve reference QR record: ${error.message}`,
+    );
+  }
+
+  if (!data || data.length === 0) {
+    return null;
+  }
+
+  const row = data[0] as unknown as {
+    id: string;
+    merchant_id: string;
+    storage_path: string;
+    payload_hash: string;
+    raw_payload: string;
+    finder_coordinates?: unknown;
+    uploaded_at: string;
+  };
+
+  return {
+    id: row.id,
+    merchantId: row.merchant_id,
+    storagePath: row.storage_path,
+    payloadHash: row.payload_hash,
+    rawPayload: row.raw_payload,
+    finderCoordinates: row.finder_coordinates,
+    uploadedAt: row.uploaded_at,
+  };
+}
+
+/**
+ * Downloads a private reference QR image buffer from Supabase Storage.
+ *
+ * @param storagePath - Relative path inside the private reference-qrs bucket.
+ * @param client - Supabase client instance.
+ * @returns Promise resolving to in-memory Buffer or null if missing.
+ */
+export async function downloadReferenceQrImage(
+  storagePath: string,
+  client: SupabaseClient = supabaseServer,
+): Promise<Buffer | null> {
+  if (!storagePath || storagePath.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await client.storage
+      .from('reference-qrs')
+      .download(storagePath.trim());
+
+    if (error || !data) {
+      return null;
+    }
+
+    const arrayBuffer = await data.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Saves a new reference QR metadata record into reference_qrs.
+ *
+ * @param params - Registration parameters matching the database schema.
+ * @param client - Supabase client instance.
+ * @returns Promise resolving to created ReferenceQrRecord.
+ */
+export async function saveReferenceQr(
+  params: {
+    merchantId: string;
+    storagePath: string;
+    payloadHash: string;
+    rawPayload: string;
+    finderCoordinates?: unknown;
+  },
+  client: SupabaseClient = supabaseServer,
+): Promise<ReferenceQrRecord> {
+  const { merchantId, storagePath, payloadHash, rawPayload, finderCoordinates } = params;
+
+  const insertPayload: Record<string, unknown> = {
+    merchant_id: merchantId.trim(),
+    storage_path: storagePath.trim(),
+    payload_hash: payloadHash.trim(),
+    raw_payload: rawPayload.trim(),
+  };
+
+  if (finderCoordinates !== undefined) {
+    insertPayload.finder_coordinates = finderCoordinates;
+  }
+
+  const { data, error } = await client
+    .from('reference_qrs')
+    .insert(insertPayload)
+    .select(
+      'id, merchant_id, storage_path, payload_hash, raw_payload, finder_coordinates, uploaded_at',
+    )
+    .single();
+
+  if (error || !data) {
+    throw new RegistryQueryFailedError(
+      `Failed to save reference QR record: ${error?.message ?? 'Unknown database error'}`,
+    );
+  }
+
+  const row = data as unknown as {
+    id: string;
+    merchant_id: string;
+    storage_path: string;
+    payload_hash: string;
+    raw_payload: string;
+    finder_coordinates?: unknown;
+    uploaded_at: string;
+  };
+
+  return {
+    id: row.id,
+    merchantId: row.merchant_id,
+    storagePath: row.storage_path,
+    payloadHash: row.payload_hash,
+    rawPayload: row.raw_payload,
+    finderCoordinates: row.finder_coordinates,
+    uploadedAt: row.uploaded_at,
+  };
+}
+
+/**
+ * Removes all reference QR records and associated private storage files for a merchant.
+ *
+ * @param merchantId - Authoritative merchant identifier.
+ * @param client - Supabase client instance.
+ * @returns Promise resolving to deletion summary.
+ */
+export async function deleteReferenceQrForMerchant(
+  merchantId: string,
+  client: SupabaseClient = supabaseServer,
+): Promise<{ deletedRecords: number; storagePathsRemoved: string[] }> {
+  if (!merchantId || merchantId.trim().length === 0) {
+    return { deletedRecords: 0, storagePathsRemoved: [] };
+  }
+
+  const trimmedId = merchantId.trim();
+
+  // 1. Find existing records to identify storage paths to remove
+  const { data: existingRecords } = await client
+    .from('reference_qrs')
+    .select('id, storage_path')
+    .eq('merchant_id', trimmedId);
+
+  const storagePaths = (
+    (existingRecords as Array<{ id: string; storage_path: string }> | null) ?? []
+  )
+    .map((r) => r.storage_path)
+    .filter((p: unknown): p is string => typeof p === 'string' && p.length > 0);
+
+  // 2. Delete database records
+  const { error: dbError } = await client
+    .from('reference_qrs')
+    .delete()
+    .eq('merchant_id', trimmedId);
+
+  if (dbError) {
+    throw new RegistryQueryFailedError(
+      `Failed to delete reference QR records: ${dbError.message}`,
+    );
+  }
+
+  // 3. Delete files from storage
+  if (storagePaths.length > 0) {
+    try {
+      await client.storage.from('reference-qrs').remove(storagePaths);
+    } catch {
+      // Best-effort storage removal
+    }
+  }
+
+  return {
+    deletedRecords: existingRecords?.length ?? 0,
+    storagePathsRemoved: storagePaths,
+  };
+}
+
+/**
+ * Generates a short-lived private signed URL for previewing the reference QR image in the dashboard.
+ *
+ * @param storagePath - Storage path inside reference-qrs.
+ * @param expiresInSeconds - Token validity in seconds (default: 300 / 5 minutes).
+ * @param client - Supabase client instance.
+ * @returns Promise resolving to signed URL string or null.
+ */
+export async function createReferenceQrPreviewUrl(
+  storagePath: string,
+  expiresInSeconds = 300,
+  client: SupabaseClient = supabaseServer,
+): Promise<string | null> {
+  if (!storagePath || storagePath.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const { data, error } = await client.storage
+      .from('reference-qrs')
+      .createSignedUrl(storagePath.trim(), expiresInSeconds);
+
+    if (error || !data) {
+      return null;
+    }
+
+    return data.signedUrl;
+  } catch {
+    return null;
   }
 }

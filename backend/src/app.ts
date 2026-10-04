@@ -4,6 +4,7 @@ import { env } from './config/env.js';
 import { securityPlugin } from './plugins/security.js';
 import { healthRoutes } from './routes/health.js';
 import { verifyRoutes } from './routes/verify.js';
+import { referenceQrRoutes } from './routes/reference-qr.js';
 
 export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
   const app = fastify({
@@ -90,6 +91,7 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
   });
   app.register(healthRoutes);
   app.register(verifyRoutes);
+  app.register(referenceQrRoutes);
 
   return app;
 }

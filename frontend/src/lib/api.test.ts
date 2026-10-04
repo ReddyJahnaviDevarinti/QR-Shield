@@ -162,4 +162,75 @@ describe('Frontend API Client (verifyQr)', () => {
       status: 502,
     });
   });
+
+  it('8. fetchReferenceQr sends Authorization Bearer header when token provided', async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+      capturedHeaders = options?.headers as Record<string, string>;
+      return new Response(JSON.stringify({ reference_qr: null }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const { fetchReferenceQr } = await import('./api');
+    await fetchReferenceQr('merch-123', 'test-access-token');
+
+    expect(capturedHeaders?.['Authorization']).toBe('Bearer test-access-token');
+  });
+
+  it('9. uploadReferenceQr sends Authorization Bearer header when token provided', async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    let capturedMethod: string | undefined;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+      capturedHeaders = options?.headers as Record<string, string>;
+      capturedMethod = options?.method;
+      return new Response(
+        JSON.stringify({
+          reference_qr: {
+            id: 'ref-1',
+            merchant_id: 'merch-123',
+            storage_path: 'merch-123/ref.png',
+            payload_hash: 'hash',
+            raw_payload: 'upi://pay',
+            uploaded_at: new Date().toISOString(),
+          },
+        }),
+        {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    });
+
+    const { uploadReferenceQr } = await import('./api');
+    const file = new File(['fake-png'], 'ref.png', { type: 'image/png' });
+    const res = await uploadReferenceQr('merch-123', file, 'test-access-token');
+
+    expect(capturedMethod).toBe('POST');
+    expect(capturedHeaders?.['Authorization']).toBe('Bearer test-access-token');
+    expect(res.id).toBe('ref-1');
+  });
+
+  it('10. deleteReferenceQr sends Authorization Bearer header when token provided', async () => {
+    let capturedHeaders: Record<string, string> | undefined;
+    let capturedMethod: string | undefined;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, options) => {
+      capturedHeaders = options?.headers as Record<string, string>;
+      capturedMethod = options?.method;
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const { deleteReferenceQr } = await import('./api');
+    await deleteReferenceQr('merch-123', 'test-access-token');
+
+    expect(capturedMethod).toBe('DELETE');
+    expect(capturedHeaders?.['Authorization']).toBe('Bearer test-access-token');
+  });
 });

@@ -8,15 +8,26 @@ import React, {
 } from 'react';
 import type { User, Session, AuthError } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import type { MerchantRecord, PaymentDestinationRecord } from '../types';
+import type {
+  MerchantRecord,
+  PaymentDestinationRecord,
+  ReferenceQrRecord,
+} from '../types';
+import {
+  fetchReferenceQr,
+  uploadReferenceQr as apiUploadReferenceQr,
+  deleteReferenceQr as apiDeleteReferenceQr,
+} from '../lib/api';
 
 export interface AuthContextType {
   user: User | null;
   session: Session | null;
   merchant: MerchantRecord | null;
   destinations: PaymentDestinationRecord[];
+  referenceQr: ReferenceQrRecord | null;
   isLoading: boolean;
   isMerchantLoading: boolean;
+  isReferenceQrLoading: boolean;
   authError: string | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (
@@ -37,6 +48,8 @@ export interface AuthContextType {
     destinationId: string,
     updates: { destination_value?: string; is_active?: boolean },
   ) => Promise<PaymentDestinationRecord>;
+  uploadReferenceQr: (file: File) => Promise<ReferenceQrRecord>;
+  deleteReferenceQr: () => Promise<void>;
   refreshMerchantData: () => Promise<void>;
   clearAuthError: () => void;
 }
@@ -48,8 +61,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [session, setSession] = useState<Session | null>(null);
   const [merchant, setMerchant] = useState<MerchantRecord | null>(null);
   const [destinations, setDestinations] = useState<PaymentDestinationRecord[]>([]);
+  const [referenceQr, setReferenceQr] = useState<ReferenceQrRecord | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isMerchantLoading, setIsMerchantLoading] = useState<boolean>(false);
+  const [isReferenceQrLoading, setIsReferenceQrLoading] = useState<boolean>(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
   const clearAuthError = useCallback(() => {
@@ -57,45 +72,56 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   // Fetch merchant profile and payment destinations for a user
-  const loadMerchantAndDestinations = useCallback(async (userId: string) => {
-    setIsMerchantLoading(true);
-    try {
-      // 1. Query merchant for authenticated user
-      const { data: merchantData, error: merchantError } = await supabase
-        .from('merchants')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (merchantError) {
-        throw new Error(`Failed to load merchant profile: ${merchantError.message}`);
-      }
-
-      setMerchant((merchantData as MerchantRecord) || null);
-
-      // 2. Query destinations if merchant exists
-      if (merchantData?.id) {
-        const { data: destData, error: destError } = await supabase
-          .from('payment_destinations')
+  const loadMerchantAndDestinations = useCallback(
+    async (userId: string, accessToken?: string) => {
+      setIsMerchantLoading(true);
+      try {
+        // 1. Query merchant for authenticated user
+        const { data: merchantData, error: merchantError } = await supabase
+          .from('merchants')
           .select('*')
-          .eq('merchant_id', merchantData.id)
-          .order('registered_at', { ascending: false });
+          .eq('user_id', userId)
+          .maybeSingle();
 
-        if (destError) {
-          throw new Error(`Failed to load payment destinations: ${destError.message}`);
+        if (merchantError) {
+          throw new Error(`Failed to load merchant profile: ${merchantError.message}`);
         }
 
-        setDestinations((destData as PaymentDestinationRecord[]) || []);
-      } else {
-        setDestinations([]);
+        setMerchant((merchantData as MerchantRecord) || null);
+
+        // 2. Query destinations and reference QR if merchant exists
+        if (merchantData?.id) {
+          const { data: destData, error: destError } = await supabase
+            .from('payment_destinations')
+            .select('*')
+            .eq('merchant_id', merchantData.id)
+            .order('registered_at', { ascending: false });
+
+          if (destError) {
+            throw new Error(`Failed to load payment destinations: ${destError.message}`);
+          }
+
+          setDestinations((destData as PaymentDestinationRecord[]) || []);
+
+          try {
+            const ref = await fetchReferenceQr(merchantData.id, accessToken);
+            setReferenceQr(ref);
+          } catch {
+            setReferenceQr(null);
+          }
+        } else {
+          setDestinations([]);
+          setReferenceQr(null);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unknown database error';
+        setAuthError(msg);
+      } finally {
+        setIsMerchantLoading(false);
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown database error';
-      setAuthError(msg);
-    } finally {
-      setIsMerchantLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   // Initialize session and listen to auth changes
   useEffect(() => {
@@ -112,7 +138,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setSession(data.session);
           setUser(data.session?.user ?? null);
           if (data.session?.user?.id) {
-            await loadMerchantAndDestinations(data.session.user.id);
+            await loadMerchantAndDestinations(
+              data.session.user.id,
+              data.session?.access_token,
+            );
           } else {
             setMerchant(null);
             setDestinations([]);
@@ -143,10 +172,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(newUser);
 
       if (newUser?.id) {
-        await loadMerchantAndDestinations(newUser.id);
+        await loadMerchantAndDestinations(newUser.id, newSession?.access_token);
       } else {
         setMerchant(null);
         setDestinations([]);
+        setReferenceQr(null);
       }
       setIsLoading(false);
     });
@@ -209,6 +239,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(null);
     setMerchant(null);
     setDestinations([]);
+    setReferenceQr(null);
   }, []);
 
   // Create Merchant Profile
@@ -357,12 +388,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [merchant],
   );
 
+  // Upload Reference QR Image
+  const uploadReferenceQr = useCallback(
+    async (file: File): Promise<ReferenceQrRecord> => {
+      if (!merchant) {
+        throw new Error('Cannot upload reference QR: No merchant profile exists.');
+      }
+      if (!session?.access_token) {
+        throw new Error(
+          'Cannot upload reference QR: Active authentication session required.',
+        );
+      }
+
+      setAuthError(null);
+      setIsReferenceQrLoading(true);
+      try {
+        const record = await apiUploadReferenceQr(
+          merchant.id,
+          file,
+          session.access_token,
+        );
+        setReferenceQr(record);
+        return record;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Failed to upload reference QR.';
+        setAuthError(msg);
+        throw err;
+      } finally {
+        setIsReferenceQrLoading(false);
+      }
+    },
+    [merchant, session],
+  );
+
+  // Delete Reference QR
+  const deleteReferenceQr = useCallback(async (): Promise<void> => {
+    if (!merchant) {
+      throw new Error('Cannot delete reference QR: No merchant profile exists.');
+    }
+    if (!session?.access_token) {
+      throw new Error(
+        'Cannot delete reference QR: Active authentication session required.',
+      );
+    }
+
+    setAuthError(null);
+    setIsReferenceQrLoading(true);
+    try {
+      await apiDeleteReferenceQr(merchant.id, session.access_token);
+      setReferenceQr(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to delete reference QR.';
+      setAuthError(msg);
+      throw err;
+    } finally {
+      setIsReferenceQrLoading(false);
+    }
+  }, [merchant, session]);
+
   // Manual refresh of merchant data
   const refreshMerchantData = useCallback(async () => {
     if (user?.id) {
-      await loadMerchantAndDestinations(user.id);
+      await loadMerchantAndDestinations(user.id, session?.access_token);
     }
-  }, [user, loadMerchantAndDestinations]);
+  }, [user, session, loadMerchantAndDestinations]);
 
   const value = useMemo(
     () => ({
@@ -370,8 +459,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       session,
       merchant,
       destinations,
+      referenceQr,
       isLoading,
       isMerchantLoading,
+      isReferenceQrLoading,
       authError,
       signIn,
       signUp,
@@ -379,6 +470,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createMerchantProfile,
       registerDestination,
       updateDestination,
+      uploadReferenceQr,
+      deleteReferenceQr,
       refreshMerchantData,
       clearAuthError,
     }),
@@ -387,8 +480,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       session,
       merchant,
       destinations,
+      referenceQr,
       isLoading,
       isMerchantLoading,
+      isReferenceQrLoading,
       authError,
       signIn,
       signUp,
@@ -396,6 +491,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       createMerchantProfile,
       registerDestination,
       updateDestination,
+      uploadReferenceQr,
+      deleteReferenceQr,
       refreshMerchantData,
       clearAuthError,
     ],
@@ -409,8 +506,10 @@ const defaultGuestAuth: AuthContextType = {
   session: null,
   merchant: null,
   destinations: [],
+  referenceQr: null,
   isLoading: false,
   isMerchantLoading: false,
+  isReferenceQrLoading: false,
   authError: null,
   signIn: async () => {},
   signUp: async () => ({ needsEmailConfirmation: false }),
@@ -439,6 +538,16 @@ const defaultGuestAuth: AuthContextType = {
     is_active: true,
     registered_at: '',
   }),
+  uploadReferenceQr: async () => ({
+    id: '',
+    merchant_id: '',
+    storage_path: '',
+    payload_hash: '',
+    raw_payload: '',
+    uploaded_at: '',
+    preview_url: null,
+  }),
+  deleteReferenceQr: async () => {},
   refreshMerchantData: async () => {},
   clearAuthError: () => {},
 };

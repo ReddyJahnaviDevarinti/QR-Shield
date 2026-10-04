@@ -29,9 +29,20 @@ import type {
 import {
   findActiveTrustedDestinations,
   findActiveTrustedDestinationsForMerchant,
+  findActiveReferenceQrForMerchant,
+  downloadReferenceQrImage,
   type TrustedRegistryDestination,
+  type ReferenceQrRecord,
 } from '../integrations/trusted-registry/index.js';
 import { RegistryError } from '../integrations/trusted-registry/errors.js';
+import { analyzeQrVisualDifference } from '../modules/tamper-analysis/index.js';
+import type {
+  TamperAnalysisResult,
+  AlignmentClassification,
+  AnalysisQuality,
+  AnomalyIndicator,
+  TamperRecommendation,
+} from '../modules/tamper-analysis/types.js';
 import {
   generateExplanation,
   type ExplanationInput,
@@ -87,6 +98,16 @@ export interface VerifySuccessResponse {
     };
     tamper: {
       available: boolean;
+      reference_available: boolean;
+      analysis_quality?: AnalysisQuality | null;
+      visual_deviation_index?: number | null;
+      alignment_quality?: number | null;
+      alignment_classification?: AlignmentClassification | null;
+      matrix_mismatch_ratio?: number | null;
+      boundary_anomaly_detected?: boolean | null;
+      boundary_anomaly_score?: number | null;
+      anomaly_indicators?: AnomalyIndicator[] | null;
+      recommendation?: TamperRecommendation | null;
     };
   };
   risk_factors: CompositeRiskFactor[];
@@ -295,18 +316,51 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
       // Step 5: Deterministic image quality analysis
       const imageQualityResult = await analyzeImageQuality(imageBuffer);
 
-      // Step 6: Composite verification (tamper is null until reference QR storage integration)
+      // Step 6: Physical QR Tamper Analysis (when merchant context is supplied and has an active reference QR)
+      const targetMerchantId = merchantId;
+      let referenceRecord: ReferenceQrRecord | null = null;
+      let referenceBuffer: Buffer | null = null;
+      let tamperResult: TamperAnalysisResult | null = null;
+
+      if (targetMerchantId) {
+        try {
+          referenceRecord = await findActiveReferenceQrForMerchant(targetMerchantId);
+          if (referenceRecord) {
+            referenceBuffer = await downloadReferenceQrImage(referenceRecord.storagePath);
+            if (referenceBuffer) {
+              try {
+                tamperResult = await analyzeQrVisualDifference(
+                  referenceBuffer,
+                  imageBuffer,
+                );
+              } catch (tamperErr: unknown) {
+                request.log.warn(
+                  { err: tamperErr, merchant_id: targetMerchantId },
+                  'Physical tamper analysis could not be completed; visual comparison inconclusive',
+                );
+              }
+            }
+          }
+        } catch (refErr: unknown) {
+          request.log.warn(
+            { err: refErr, merchant_id: targetMerchantId },
+            'Failed to retrieve merchant reference QR; proceeding with destination verification',
+          );
+        }
+      }
+
+      // Step 7: Composite verification
       const compositeResult = composeVerificationResult(
         destinationResult,
         imageQualityResult,
-        null,
+        tamperResult,
       );
 
-      // Step 7: Authoritative canonical status anchor
+      // Step 8: Authoritative canonical status anchor
       // Architectural rule: Gemini has ZERO authority over verification_status
       const authoritativeStatus = compositeResult.status;
 
-      // Step 8: Gemini explanation layer (explanation-only, zero decision authority)
+      // Step 9: Gemini explanation layer (explanation-only, zero decision authority)
       const explanationInput: ExplanationInput = {
         canonicalStatus: authoritativeStatus,
         scannedDestination: compositeResult.evidence.destination.scannedDestination,
@@ -323,13 +377,23 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
           sharpnessClassification:
             compositeResult.evidence.imageQuality.sharpnessClassification,
         },
-        tamperSummary: null,
+        tamperSummary: tamperResult
+          ? {
+              evaluated: true,
+              tamperDetected:
+                authoritativeStatus === 'SUSPICIOUS' ||
+                tamperResult.boundaryAnomalyDetected,
+              confidenceScore: tamperResult.alignmentQuality,
+              riskScore: tamperResult.visualDeviationIndex,
+              anomalyFlags: tamperResult.anomalyIndicators,
+            }
+          : null,
         evidenceCodes: [authoritativeStatus, ...compositeResult.riskFactors],
       };
 
       const explanationResult = await generateExplanation(explanationInput);
 
-      // Step 9: Format response with real UUID, dynamic ISO timestamp, and measured duration
+      // Step 10: Format response with real UUID, dynamic ISO timestamp, and measured duration
       const durationMs = Math.max(
         0,
         Math.round((performance.now() - startTime) * 100) / 100,
@@ -392,7 +456,21 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
               compositeResult.evidence.imageQuality.sharpnessClassification,
           },
           tamper: {
-            available: false,
+            available: tamperResult !== null,
+            reference_available: referenceRecord !== null,
+            ...(tamperResult
+              ? {
+                  analysis_quality: tamperResult.analysisQuality,
+                  visual_deviation_index: tamperResult.visualDeviationIndex,
+                  alignment_quality: tamperResult.alignmentQuality,
+                  alignment_classification: tamperResult.alignmentClassification,
+                  matrix_mismatch_ratio: tamperResult.matrixMismatchRatio,
+                  boundary_anomaly_detected: tamperResult.boundaryAnomalyDetected,
+                  boundary_anomaly_score: tamperResult.boundaryAnomalyScore,
+                  anomaly_indicators: tamperResult.anomalyIndicators,
+                  recommendation: tamperResult.recommendation,
+                }
+              : {}),
           },
         },
         risk_factors: compositeResult.riskFactors,
