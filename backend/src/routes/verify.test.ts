@@ -106,7 +106,7 @@ describe('End-to-End QR Verification API (POST /api/v1/verify)', () => {
     expect(body.registered_destination).toBe('store@icici');
     expect(body.normalized_destination).toBe('store@icici');
     expect(body.explanation).toBe(
-      'The scanned payment destination matches an active trusted registration.',
+      'The scanned payment destination matches an active trusted registration and the available image evidence is sufficient for verification.',
     );
   });
 
@@ -788,5 +788,382 @@ describe('End-to-End QR Verification API (POST /api/v1/verify)', () => {
     expect(body.version).toBe('1.0.0');
     expect(typeof body.uptime_seconds).toBe('number');
     expect(typeof body.timestamp).toBe('string');
+  });
+
+  describe('Prompt 017: Composite Verification & Image Quality API Integration', () => {
+    it('P17-1. Registered VPA + acceptable image returns VERIFIED with full image_quality metrics', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('VERIFIED');
+      expect(body.destination_match).toBe(true);
+      expect(body.recommendation).toBe('REVIEW_NOT_REQUIRED');
+      expect(body.explanation).toBe(
+        'The scanned payment destination matches an active trusted registration and the available image evidence is sufficient for verification.',
+      );
+
+      // Verify image_quality structure
+      expect(body.image_quality).toBeDefined();
+      expect(body.image_quality.overall_quality).toBe('ACCEPTABLE');
+      expect(typeof body.image_quality.mean_brightness).toBe('number');
+      expect(typeof body.image_quality.contrast_score).toBe('number');
+      expect(typeof body.image_quality.sharpness_score).toBe('number');
+      expect(typeof body.image_quality.dynamic_range).toBe('number');
+      expect(body.image_quality.brightness_classification).toBe('ACCEPTABLE');
+      expect(body.image_quality.contrast_classification).toBe('ACCEPTABLE_CONTRAST');
+      expect(body.image_quality.sharpness_classification).toBe('ACCEPTABLE_SHARPNESS');
+      expect(Array.isArray(body.image_quality.quality_flags)).toBe(true);
+
+      // Verify composite_evidence structure
+      expect(body.composite_evidence).toBeDefined();
+      expect(body.composite_evidence.destination.destination_match).toBe(true);
+      expect(body.composite_evidence.image_quality.overall_quality).toBe('ACCEPTABLE');
+      expect(body.composite_evidence.tamper.available).toBe(false);
+    });
+
+    it('P17-2. Registered VPA + insufficient image quality returns INSUFFICIENT_EVIDENCE', async () => {
+      const cleanBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+      // Downscale to 140px (LOW_RESOLUTION), reduce brightness (TOO_DARK), apply slight blur (BLURRY) -> 3 flags -> INSUFFICIENT
+      const degradedBuffer = await sharp(cleanBuffer)
+        .resize(140, 140)
+        .modulate({ brightness: 0.18 })
+        .blur(0.8)
+        .png()
+        .toBuffer();
+
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr_degraded.png',
+          mimetype: 'image/png',
+          content: degradedBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('INSUFFICIENT_EVIDENCE');
+      expect(body.destination_match).toBe(true);
+      expect(body.image_quality.overall_quality).toBe('INSUFFICIENT');
+      expect(body.risk_factors).toContain('IMAGE_QUALITY_INSUFFICIENT');
+      expect(body.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      expect(body.explanation).toBe(
+        'The available evidence is insufficient for a reliable verification result.',
+      );
+      expect(body.composite_evidence.tamper.available).toBe(false);
+    });
+
+    it('P17-3. Unknown VPA + acceptable image returns UNVERIFIED with proper risk factors', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=unregistered-vpa@icici&pn=Unknown%20Store',
+      );
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([]);
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('UNVERIFIED');
+      expect(body.destination_match).toBe(false);
+      expect(body.risk_factors).toContain('NO_TRUSTED_REGISTRATION');
+      expect(body.recommendation).toBe('VERIFY_MERCHANT_BEFORE_PAYMENT');
+      expect(body.image_quality.overall_quality).toBe('ACCEPTABLE');
+      expect(body.composite_evidence.tamper.available).toBe(false);
+    });
+
+    it('P17-4. Unknown VPA + poor image returns UNVERIFIED (lack of trusted registration has precedence)', async () => {
+      const cleanBuffer = await generateQrBuffer(
+        'upi://pay?pa=unregistered-vpa@icici&pn=Unknown%20Store',
+      );
+      const degradedBuffer = await sharp(cleanBuffer)
+        .resize(140, 140)
+        .modulate({ brightness: 0.18 })
+        .blur(0.8)
+        .png()
+        .toBuffer();
+
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([]);
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr_degraded.png',
+          mimetype: 'image/png',
+          content: degradedBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // Rule C02: unverified status takes precedence over poor image quality
+      expect(body.verification_status).toBe('UNVERIFIED');
+      expect(body.destination_match).toBe(false);
+      expect(body.risk_factors).toContain('NO_TRUSTED_REGISTRATION');
+      expect(body.risk_factors).toContain('IMAGE_QUALITY_INSUFFICIENT');
+      expect(body.recommendation).toBe('VERIFY_MERCHANT_BEFORE_PAYMENT');
+    });
+
+    it('P17-5. Destination mismatch + poor image returns DESTINATION_MISMATCH (conflict has precedence)', async () => {
+      const cleanBuffer = await generateQrBuffer(
+        'upi://pay?pa=attacker@upi&pn=Other%20Store&mc=5411',
+      );
+      const degradedBuffer = await sharp(cleanBuffer)
+        .resize(140, 140)
+        .modulate({ brightness: 0.18 })
+        .blur(0.8)
+        .png()
+        .toBuffer();
+
+      vi.spyOn(
+        registryModule,
+        'findActiveTrustedDestinationsForMerchant',
+      ).mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-abc',
+          destinationType: 'VPA',
+          destinationValue: 'legit-store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const req = createMultipartRequest(
+        { merchant_id: 'merchant-abc' },
+        {
+          fieldname: 'image',
+          filename: 'qr_degraded.png',
+          mimetype: 'image/png',
+          content: degradedBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // Rule C03: destination conflict takes precedence over image quality issues
+      expect(body.verification_status).toBe('DESTINATION_MISMATCH');
+      expect(body.destination_match).toBe(false);
+      expect(body.risk_factors).toContain('DESTINATION_CONFLICT');
+      expect(body.recommendation).toBe('DO_NOT_PROCEED_WITH_PAYMENT');
+    });
+
+    it('P17-6. Destination mismatch with modified border image returns DESTINATION_MISMATCH', async () => {
+      const cleanBuffer = await generateQrBuffer(
+        'upi://pay?pa=attacker@upi&pn=Other%20Store&mc=5411',
+      );
+      // Composite border box around quiet zone
+      const borderSvg = Buffer.from(
+        `<svg width="400" height="400">
+          <rect x="30" y="30" width="340" height="340" fill="none" stroke="#000000" stroke-width="6" />
+        </svg>`,
+      );
+      const borderedBuffer = await sharp(cleanBuffer)
+        .composite([{ input: borderSvg, top: 0, left: 0 }])
+        .png()
+        .toBuffer();
+
+      vi.spyOn(
+        registryModule,
+        'findActiveTrustedDestinationsForMerchant',
+      ).mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-abc',
+          destinationType: 'VPA',
+          destinationValue: 'legit-store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const req = createMultipartRequest(
+        { merchant_id: 'merchant-abc' },
+        {
+          fieldname: 'image',
+          filename: 'qr_border.png',
+          mimetype: 'image/png',
+          content: borderedBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      // Destination mismatch is retained because tamper analysis is not integrated into API yet
+      expect(body.verification_status).toBe('DESTINATION_MISMATCH');
+      expect(body.destination_match).toBe(false);
+      expect(body.recommendation).toBe('DO_NOT_PROCEED_WITH_PAYMENT');
+      expect(body.composite_evidence.tamper.available).toBe(false);
+    });
+
+    it('P17-7. Text QR payload returns UNVERIFIED with NO_PAYMENT_DESTINATION factor', async () => {
+      const qrBuffer = await generateQrBuffer('Non-payment text note');
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('UNVERIFIED');
+      expect(body.destination_match).toBe(false);
+      expect(body.risk_factors).toContain('NO_PAYMENT_DESTINATION');
+      expect(body.recommendation).toBe('VERIFY_MERCHANT_BEFORE_PAYMENT');
+      expect(body.composite_evidence.tamper.available).toBe(false);
+    });
+
+    it('P17-8. Verifies no query to reference_qrs table occurs', async () => {
+      const fromSpy = vi.spyOn(supabaseServer, 'from');
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      // reference_qrs must NEVER be accessed in Prompt 017
+      expect(fromSpy).not.toHaveBeenCalledWith('reference_qrs');
+    });
+
+    it('P17-9. Verifies tamper.available is explicitly false in all responses', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([]);
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      const body = res.json();
+      expect(body.composite_evidence.tamper.available).toBe(false);
+    });
   });
 });

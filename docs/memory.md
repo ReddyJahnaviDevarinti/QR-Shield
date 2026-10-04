@@ -197,6 +197,33 @@ The following items and components have been implemented, verified, and locked i
     - `engine.test.ts`: 34 comprehensive tests covering the 22 core requirements, full 8-case status precedence matrix (Rules C01 - C06), exact visual deviation boundary tests (just below, at, just above), input immutability, network/filesystem isolation, and object overload.
   - Total backend tests: 168 passing across 8 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
 
+- **Prompt 017 End-to-End Image Quality & Composite Verification API Integration (`backend/src/routes/verify.ts`)**:
+  - Integrated `analyzeImageQuality` and `composeVerificationResult` into the `POST /api/v1/verify` route handler.
+  - Final pipeline order strictly enforced:
+    1. Read and validate uploaded image (multipart, size, MIME type)
+    2. `decodeQr(imageBuffer)`
+    3. `parsePaymentPayload(decoded.rawPayload)`
+    4. Query trusted registry for active destination records
+    5. `verifyDestination(parsedPayload, trustedDestinations)`
+    6. `analyzeImageQuality(imageBuffer)`
+    7. `composeVerificationResult(destinationResult, imageQualityResult, null)` (tamper is `null` until reference QR storage integration)
+    8. Compose and return unified response contract
+  - Response contract extended with structured composite and image quality evidence:
+    - `verification_status`: Canonical status from `composeVerificationResult().status` (`VERIFIED`, `DESTINATION_MISMATCH`, `UNVERIFIED`, `INSUFFICIENT_EVIDENCE`).
+    - `image_quality`: Full metrics including `overall_quality`, `mean_brightness`, `contrast_score`, `sharpness_score`, `dynamic_range`, exposure/contrast/sharpness classifications, and `quality_flags`.
+    - `composite_evidence`: Structured nested evidence for destination, image quality, and `tamper: { available: false }`.
+    - `risk_factors`: Machine-readable array from composite engine (`IMAGE_QUALITY_INSUFFICIENT`, `DESTINATION_CONFLICT`, `NO_TRUSTED_REGISTRATION`, etc.).
+    - `recommendation`: Canonical recommendation from composite engine (`REVIEW_NOT_REQUIRED`, `CAPTURE_CLEARER_IMAGE`, `DO_NOT_PROCEED_WITH_PAYMENT`, etc.).
+    - `explanation`: Deterministic neutral explanation aligned to composite result.
+    - `processing_metadata`: Real UUID `verification_id`, dynamic ISO timestamp, and measured non-negative duration in ms.
+  - Controlled error mapping: catches `ImageQualityError` mapping to controlled JSON without leaking buffers, stack traces, or file paths.
+  - Comprehensive integration test suite: 9 new tests added to `verify.test.ts` (34 total route tests, 177 total backend tests across 8 suites).
+  - Executed live local diagnostic tests against real Supabase instance (`51bc512c-7945-4404-bd24-4316ce924daa`, `qrshield-test@icici`):
+    - Confirmed real local `VERIFIED` result with `overall_quality: ACCEPTABLE`, `destination_match: true`, `tamper.available: false`.
+    - Confirmed real local `INSUFFICIENT_EVIDENCE` result with synthetic degraded image crossing low resolution, dark exposure, and blur thresholds.
+    - Confirmed real local `DESTINATION_MISMATCH` result with attacker VPA.
+  - Total backend tests: 177 passing across 8 test suites. Working tree clean. Zero database mutations. Zero Storage uploads. Zero Gemini calls. Zero frontend changes.
+
 ### Not Completed (Explicitly Pending Future Phases)
 - Authentication UI & Session Hooks (Phase 1 — Supabase Auth)
 - Dashboard Shell & Backend Persistence Integration (Phase 2)
@@ -216,7 +243,7 @@ The following items and components have been implemented, verified, and locked i
 
 ## 2. Currently Working On
 
-Completed **Prompt 016 (QRShield Deterministic Composite Verification Engine)**. Ready for next phase (pipeline integration / calibrated risk engine).
+Completed **Prompt 017 (Integrate Image Quality + Composite Verification into API)**. Ready for next phase (calibrated risk engine or reference QR storage integration).
 
 ---
 

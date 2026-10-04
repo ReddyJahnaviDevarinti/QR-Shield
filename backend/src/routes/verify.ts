@@ -10,10 +10,22 @@ import {
 import { parsePaymentPayload } from '../modules/payment-parser/index.js';
 import { PaymentParserError } from '../modules/payment-parser/errors.js';
 import { verifyDestination } from '../modules/verification-engine/index.js';
+import type { TrustedDestination } from '../modules/verification-engine/types.js';
+import { analyzeImageQuality } from '../modules/image-quality/index.js';
+import { ImageQualityError } from '../modules/image-quality/errors.js';
 import type {
-  CanonicalVerificationStatus,
-  TrustedDestination,
-} from '../modules/verification-engine/types.js';
+  BrightnessClassification,
+  ContrastClassification,
+  OverallQualityClassification,
+  QualityFlag,
+  SharpnessClassification,
+} from '../modules/image-quality/types.js';
+import { composeVerificationResult } from '../modules/composite-verification/index.js';
+import type {
+  CanonicalCompositeStatus,
+  CompositeRecommendation,
+  CompositeRiskFactor,
+} from '../modules/composite-verification/types.js';
 import {
   findActiveTrustedDestinations,
   findActiveTrustedDestinationsForMerchant,
@@ -35,7 +47,7 @@ const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
  * Response structure for successful QR destination verification.
  */
 export interface VerifySuccessResponse {
-  verification_status: CanonicalVerificationStatus;
+  verification_status: CanonicalCompositeStatus;
   decoded_payload: string;
   normalized_destination: string | null;
   registered_destination: string | null;
@@ -45,7 +57,36 @@ export interface VerifySuccessResponse {
     active_trusted_destinations_checked: number;
     exact_match: boolean;
   };
-  risk_factors: string[];
+  image_quality: {
+    overall_quality: OverallQualityClassification;
+    mean_brightness: number;
+    contrast_score: number;
+    sharpness_score: number;
+    dynamic_range: number;
+    brightness_classification: BrightnessClassification;
+    contrast_classification: ContrastClassification;
+    sharpness_classification: SharpnessClassification;
+    quality_flags: QualityFlag[];
+  };
+  composite_evidence: {
+    destination: {
+      scanned_destination: string | null;
+      destination_match: boolean;
+      active_trusted_destinations_checked: number;
+      exact_match: boolean;
+    };
+    image_quality: {
+      overall_quality: OverallQualityClassification;
+      brightness_classification: BrightnessClassification;
+      contrast_classification: ContrastClassification;
+      sharpness_classification: SharpnessClassification;
+    };
+    tamper: {
+      available: boolean;
+    };
+  };
+  risk_factors: CompositeRiskFactor[];
+  recommendation: CompositeRecommendation;
   explanation: string;
   processing_metadata: {
     verification_id: string;
@@ -55,19 +96,21 @@ export interface VerifySuccessResponse {
 }
 
 /**
- * Provides a factual, deterministic explanation from the verification result.
+ * Provides a factual, deterministic explanation from the composite verification result.
  * Gemini is NOT involved in deciding this canonical result.
  */
-function getDeterministicExplanation(status: CanonicalVerificationStatus): string {
+function getDeterministicExplanation(status: CanonicalCompositeStatus): string {
   switch (status) {
     case 'VERIFIED':
-      return 'The scanned payment destination matches an active trusted registration.';
+      return 'The scanned payment destination matches an active trusted registration and the available image evidence is sufficient for verification.';
     case 'DESTINATION_MISMATCH':
       return 'The scanned payment destination conflicts with the active trusted destination for the selected merchant.';
     case 'UNVERIFIED':
       return 'No active trusted destination is available for comparison.';
+    case 'SUSPICIOUS':
+      return 'The scanned QR code displays visual anomalies requiring manual inspection.';
     case 'INSUFFICIENT_EVIDENCE':
-      return 'The available QR payload does not contain enough information for destination verification.';
+      return 'The available evidence is insufficient for a reliable verification result.';
   }
 }
 
@@ -257,24 +300,34 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
           isActive: d.isActive,
         }));
 
-      // Step 4: Run pure verification engine (canonical status decider)
-      const verificationResult = verifyDestination(parsedPayload, trustedDestinations);
+      // Step 4: Run pure verification engine (destination matching)
+      const destinationResult = verifyDestination(parsedPayload, trustedDestinations);
 
-      // Step 5: Format response with real UUID, dynamic ISO timestamp, and measured duration
+      // Step 5: Deterministic image quality analysis
+      const imageQualityResult = await analyzeImageQuality(imageBuffer);
+
+      // Step 6: Composite verification (tamper is null until reference QR storage integration)
+      const compositeResult = composeVerificationResult(
+        destinationResult,
+        imageQualityResult,
+        null,
+      );
+
+      // Step 7: Format response with real UUID, dynamic ISO timestamp, and measured duration
       const durationMs = Math.max(
         0,
         Math.round((performance.now() - startTime) * 100) / 100,
       );
       const verificationId = crypto.randomUUID();
       const timestamp = new Date().toISOString();
-      const explanation = getDeterministicExplanation(verificationResult.status);
+      const explanation = getDeterministicExplanation(compositeResult.status);
 
       // Structured logging without sensitive secrets or image content
       request.log.info(
         {
           verification_id: verificationId,
           endpoint: '/api/v1/verify',
-          status: verificationResult.status,
+          status: compositeResult.status,
           duration_ms: durationMs,
           opt_in_audit: optInAudit ?? false,
         },
@@ -282,19 +335,52 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
       );
 
       const responseBody: VerifySuccessResponse = {
-        verification_status: verificationResult.status,
+        verification_status: compositeResult.status,
         decoded_payload: decoded.rawPayload,
-        normalized_destination: verificationResult.evidence.normalizedScannedDestination,
-        registered_destination: verificationResult.matchedDestination,
-        destination_match: verificationResult.destinationMatch,
+        normalized_destination: compositeResult.evidence.destination.scannedDestination,
+        registered_destination: compositeResult.matchedDestination,
+        destination_match: compositeResult.destinationMatch,
         evidence: {
           normalized_scanned_destination:
-            verificationResult.evidence.normalizedScannedDestination,
+            compositeResult.evidence.destination.scannedDestination,
           active_trusted_destinations_checked:
-            verificationResult.evidence.activeTrustedDestinationsChecked,
-          exact_match: verificationResult.evidence.exactMatch,
+            compositeResult.evidence.destination.activeTrustedDestinationsChecked,
+          exact_match: compositeResult.evidence.destination.exactMatch,
         },
-        risk_factors: [],
+        image_quality: {
+          overall_quality: imageQualityResult.overallQuality,
+          mean_brightness: imageQualityResult.meanBrightness,
+          contrast_score: imageQualityResult.contrastScore,
+          sharpness_score: imageQualityResult.sharpnessScore,
+          dynamic_range: imageQualityResult.dynamicRange,
+          brightness_classification: imageQualityResult.brightnessClassification,
+          contrast_classification: imageQualityResult.contrastClassification,
+          sharpness_classification: imageQualityResult.sharpnessClassification,
+          quality_flags: imageQualityResult.qualityFlags,
+        },
+        composite_evidence: {
+          destination: {
+            scanned_destination: compositeResult.evidence.destination.scannedDestination,
+            destination_match: compositeResult.evidence.destination.destinationMatch,
+            active_trusted_destinations_checked:
+              compositeResult.evidence.destination.activeTrustedDestinationsChecked,
+            exact_match: compositeResult.evidence.destination.exactMatch,
+          },
+          image_quality: {
+            overall_quality: compositeResult.evidence.imageQuality.overallQuality,
+            brightness_classification:
+              compositeResult.evidence.imageQuality.brightnessClassification,
+            contrast_classification:
+              compositeResult.evidence.imageQuality.contrastClassification,
+            sharpness_classification:
+              compositeResult.evidence.imageQuality.sharpnessClassification,
+          },
+          tamper: {
+            available: false,
+          },
+        },
+        risk_factors: compositeResult.riskFactors,
+        recommendation: compositeResult.recommendation,
         explanation,
         processing_metadata: {
           verification_id: verificationId,
@@ -343,6 +429,16 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
             code: err.code,
             message: err.message,
             details: 'The decoded QR payload is not a valid payment payload.',
+          },
+        });
+      }
+
+      if (err instanceof ImageQualityError) {
+        return reply.status(err.statusCode).send({
+          error: {
+            code: err.code,
+            message: err.message,
+            details: 'Image quality evaluation failed.',
           },
         });
       }
