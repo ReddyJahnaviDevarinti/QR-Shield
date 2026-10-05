@@ -1,10 +1,10 @@
 # QRShield AI — Project Memory
 
 Status: ACTIVE
-Current Phase: Phase 10 — Full QA + Security + Performance Hardening
-Current Sub-Phase: Prompt 023 Complete (Full QA, Security Boundaries, Resource Defenses & Deterministic Benchmarks)
+Current Phase: Phase 11 — Deployment Preparation & Production Infrastructure
+Current Sub-Phase: Prompt 024-FIX Complete (Render Production Build Fix & Dedicated Production tsconfig)
 
-Last Updated: 2026-10-04
+Last Updated: 2026-10-05
 
 ---
 
@@ -631,10 +631,30 @@ The following checks and validations were executed locally and passed with zero 
       - Executed against live Supabase: verified IDOR protection (403 Forbidden on foreign merchant), unauthorized access (401 Unauthorized), non-existent merchant (404 Not Found), owner access (200 OK), and zero DB/Storage mutations on foreign tenant.
     - **Verified Tests**:
       - Frontend Vitest: 46 / 46 passed across 6 test files.
-      - Backend Vitest: 277 / 277 passed across 11 test files.
+      - Backend Vitest: 277 / 277 passed across 12 test files.
       - Sample Validation: 5 / 5 passed (VERIFIED, DESTINATION_MISMATCH, UNVERIFIED, SUSPICIOUS, INSUFFICIENT_EVIDENCE).
       - Frontend Build, Lint, Format: 0 errors, 0 warnings.
       - Backend Build, Lint, Format: 0 errors, 0 warnings.
+
+  - **Prompt 024 & 024-FIX — Deployment Preparation & Render Production Build Fix**:
+    - **Render Production Build Failure Root Cause**:
+      - Render builds execute in production mode (`npm ci && npm run build`), which omits `devDependencies` such as `vitest`, `qrcode`, and `@types/qrcode`.
+      - Previously, `backend/tsconfig.json` included `src/**/*`, causing `tsc` to type-check and compile all test files (`src/**/*.test.ts`) and developer/diagnostic scripts (`src/scripts/**`).
+      - This produced missing module errors (`Cannot find module 'vitest'`, `Cannot find module 'qrcode'`) during Render deployment.
+    - **Production TypeScript Separation (`backend/tsconfig.build.json`)**:
+      - Created dedicated production configuration extending base `tsconfig.json`.
+      - Explicitly excludes `src/**/*.test.ts`, `src/**/*.test.tsx`, and `src/scripts/**`.
+      - Emits strictly runtime artifacts to `dist/`, including `dist/server.js`, `dist/app.js`, modules, integrations, and plugins.
+      - Updated `backend/package.json` build script to: `"build": "tsc -p tsconfig.build.json"`.
+    - **Dependency Classification Audit**:
+      - Verified `qrcode`, `@types/qrcode`, and `vitest` are strictly development dependencies; zero production runtime code imports them.
+      - All runtime dependencies (`@fastify/cors`, `@fastify/helmet`, `@fastify/multipart`, `@google/genai`, `@supabase/supabase-js`, `fastify`, `fastify-plugin`, `jsqr`, `sharp`) reside in `dependencies`.
+    - **Production Simulation Validation**:
+      - Simulated an isolated production installation with `vitest`, `qrcode`, and `@types/qrcode` completely absent from `node_modules`.
+      - Confirmed `npm run build` (`tsc -p tsconfig.build.json`) succeeds with exit code 0, emitting clean `dist/server.js` without test or script artifacts.
+    - **Frontend Vercel Configuration**:
+      - Added `frontend/vercel.json` with SPA routing rewrites (`/(.*) -> /index.html`) ensuring direct navigation and refresh on `/verify`, `/dashboard`, `/sample-lab`, and `/login` resolve correctly without 404s.
+      - Standardized `.env.example` across root, frontend, and backend documenting `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_BASE_URL`, and Render configuration requirements (`PORT`, `HOST=0.0.0.0`, `ALLOWED_ORIGINS`).
 
 ---
 
@@ -660,12 +680,13 @@ The following checks and validations were executed locally and passed with zero 
 8. **Resource Exhaustion Limits**: Enforced 4096px dimension and 16.7M pixel limits on all incoming image processing buffers before raw pixel decompression.
 9. **Strict Parameter Validation & Directory Jailing**: Merchant IDs are strictly validated to UUID format, conflicting duplicate multipart fields are rejected with HTTP 400, and Sample Lab image streaming enforces directory jail boundaries against path traversal.
 10. **Automated Bundle Security Verification**: Frontend build assets are tested automatically to guarantee zero secret leakage into static client bundles.
+11. **Production TypeScript Build Isolation**: Used `tsconfig.build.json` to isolate production builds from development tests and scripts, enabling zero-failure deployments on platforms like Render where devDependencies are pruned.
 
 ---
 
 ## 9. Next Task
 
-**Phase 11 / Prompt 024**: Deployment Preparation & Production Infrastructure (Render backend service, Vercel frontend app, custom domain configuration, production Supabase environment).
+**Phase 11 / Prompt 025**: Live Deployment Execution (Render Web Service backend deploy, Vercel frontend deploy, and live cross-origin verification against hosted Supabase).
 
 ---
 
