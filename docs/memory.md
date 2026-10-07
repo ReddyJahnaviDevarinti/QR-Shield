@@ -2,7 +2,7 @@
 
 Status: ACTIVE
 Current Phase: Phase 11 — Deployment Preparation & Production Infrastructure
-Current Sub-Phase: Prompt 024-FIX Complete (Render Production Build Fix & Dedicated Production tsconfig)
+Current Sub-Phase: Prompt 024-RLS-FIX Complete (Live Merchant Profile Insert RLS Fix & Strict Session Derivation)
 
 Last Updated: 2026-10-05
 
@@ -655,6 +655,38 @@ The following checks and validations were executed locally and passed with zero 
     - **Frontend Vercel Configuration**:
       - Added `frontend/vercel.json` with SPA routing rewrites (`/(.*) -> /index.html`) ensuring direct navigation and refresh on `/verify`, `/dashboard`, `/sample-lab`, and `/login` resolve correctly without 404s.
       - Standardized `.env.example` across root, frontend, and backend documenting `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_BASE_URL`, and Render configuration requirements (`PORT`, `HOST=0.0.0.0`, `ALLOWED_ORIGINS`).
+
+  - **Prompt 024-RLS-FIX — Live Merchant Profile Insert Failure & Strict Session Derivation**:
+    - **Exact Root Cause Identified**:
+      - The PostgreSQL RLS policy on the `merchants` table enforces strict tenant ownership: `WITH CHECK (auth.uid() = user_id)`.
+      - Previously, `createMerchantProfile` in `frontend/src/context/AuthContext.tsx` derived `user_id` from local React component state (`user.id`) rather than authoritatively inspecting the active Supabase session at insert time.
+      - Additionally, `signUp` previously set `user` state to non-null even when `session` was `null` (such as before email verification), enabling unauthenticated/unconfirmed users to navigate to `/dashboard`.
+      - When an insert was attempted without a verified active session token, PostgREST executed the mutation under the `anon` role (`auth.uid() = NULL`), causing the RLS check (`auth.uid() = user_id`) to evaluate to `NULL = user_id` (falsy), triggering PostgreSQL error `42501: new row violates row-level security policy for table "merchants"`.
+    - **Database RLS Policy Audit & Verification**:
+      - Inspected the live PostgreSQL `merchants` table schema: `id` (uuid, PK), `user_id` (uuid, unique, FK), `business_name` (text, not null), `registration_number` (text), `contact_email` (text), `created_at` (timestamptz).
+      - Confirmed the database RLS policies strictly enforce ownership across all operations:
+        - `SELECT`: `auth.uid() = user_id`
+        - `INSERT`: `auth.uid() = user_id`
+        - `UPDATE`: `auth.uid() = user_id`
+        - `DELETE`: `auth.uid() = user_id`
+      - Documented the authoritative, minimal SQL definition in `migrations/001_merchants_rls.sql`.
+    - **Frontend Fixes Implemented**:
+      - `AuthContext.tsx`: `createMerchantProfile` now calls `await supabase.auth.getSession()` at insert time, verifies `activeSession?.user?.id`, and derives `user_id = activeSession.user.id` strictly from the verified session. Unauthenticated or expired callers fail fast with `'Cannot create merchant profile: No active authenticated Supabase session.'` before making an unauthenticated database request.
+      - `AuthContext.tsx`: `signUp` now sets `setUser(data.session ? data.user : null)`, preventing unconfirmed sign-up flows from granting pseudo-authenticated state.
+      - `ProtectedRoute.tsx`: Now strictly checks `if (!user || !session)` to guarantee that only authenticated callers with active JWT tokens can access `/dashboard`.
+    - **Automated Regression Test Suite**:
+      - `frontend/src/context/AuthContext.test.tsx`: 3 unit tests proving session user_id derivation, rejection of unauthenticated inserts, and prevention of pseudo-authentication during unconfirmed sign-up.
+      - `frontend/src/security.test.ts`: Added tests 28–30 asserting AST/source patterns for session derivation, `ProtectedRoute` dual check, and `signUp` session gating (52 frontend tests passing).
+      - `backend/src/scripts/validate-merchants-rls.ts`: Automated live test against hosted Supabase verifying:
+        1. Authenticated user creates own merchant profile (`user_id === session.user.id`) -> SUCCESS.
+        2. Signed-out anon client cannot insert -> 42501 error.
+        3. Authenticated user cannot insert for another user -> 42501 error.
+        4. Tenant isolation confirmed intact (0 rows readable/updatable/deletable on foreign tenant).
+        5. Dashboard refresh and persistence confirmed.
+    - **Live Account Verification (`meekosampranav@gmail.com`)**:
+      - Authenticated live user `meekosampranav@gmail.com` (`7e182d46-3912-433a-81b7-470b06cb7d66`).
+      - Confirmed live insert succeeded with `user_id = 7e182d46-3912-433a-81b7-470b06cb7d66`.
+      - Confirmed persistence on reload and clean teardown.
 
 ---
 

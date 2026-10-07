@@ -214,4 +214,35 @@ describe('Frontend Security & Isolation Tests', () => {
       }
     }
   });
+
+  // ==================================================
+  // PROMPT 024-RLS-FIX — MERCHANT RLS REGRESSION TESTS
+  // ==================================================
+
+  it('28. verifies createMerchantProfile derives user_id authoritatively from active session', () => {
+    const authContextPath = path.resolve(srcDir, 'context/AuthContext.tsx');
+    const content = fs.readFileSync(authContextPath, 'utf8');
+
+    // Must fetch session at insert time
+    expect(content).toContain('await supabase.auth.getSession()');
+    // Must derive user_id from session rather than user input
+    expect(content).toContain('sessionUserId = activeSession.user.id');
+    expect(content).toContain('user_id: sessionUserId');
+  });
+
+  it('29. verifies ProtectedRoute enforces both user and active session presence', () => {
+    const protectedRoutePath = path.resolve(srcDir, 'components/ProtectedRoute.tsx');
+    const content = fs.readFileSync(protectedRoutePath, 'utf8');
+
+    // Must check both user and session to prevent unauthenticated access
+    expect(content).toContain('!user || !session');
+  });
+
+  it('30. verifies signUp does not grant authenticated state when session is absent', () => {
+    const authContextPath = path.resolve(srcDir, 'context/AuthContext.tsx');
+    const content = fs.readFileSync(authContextPath, 'utf8');
+
+    // Must conditionally set user based on session presence
+    expect(content).toContain('setUser(data.session ? data.user : null)');
+  });
 });

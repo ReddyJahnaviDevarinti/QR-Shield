@@ -221,7 +221,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const needsEmailConfirmation = !data.session && !!data.user;
     setSession(data.session);
-    setUser(data.user);
+    setUser(data.session ? data.user : null);
 
     return { needsEmailConfirmation };
   }, []);
@@ -245,10 +245,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Create Merchant Profile
   const createMerchantProfile = useCallback(
     async (businessName: string, contactEmail?: string): Promise<MerchantRecord> => {
-      if (!user) {
-        throw new Error('Cannot create merchant profile: No active user session.');
-      }
-
       setAuthError(null);
       setIsMerchantLoading(true);
       try {
@@ -257,12 +253,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Business name is required.');
         }
 
+        // 1. Authoritatively verify active Supabase session at insert time
+        const { data: sessionData, error: sessionError } =
+          await supabase.auth.getSession();
+        if (sessionError) {
+          throw new Error(`Authentication session error: ${sessionError.message}`);
+        }
+
+        const activeSession = sessionData?.session;
+        if (!activeSession || !activeSession.user?.id) {
+          throw new Error(
+            'Cannot create merchant profile: No active authenticated Supabase session.',
+          );
+        }
+
+        const sessionUserId = activeSession.user.id;
+
+        // 2. Perform INSERT with strictly derived session user_id
         const { data, error } = await supabase
           .from('merchants')
           .insert({
-            user_id: user.id,
+            user_id: sessionUserId,
             business_name: trimmedName,
-            contact_email: contactEmail?.trim() || user.email || null,
+            contact_email: contactEmail?.trim() || activeSession.user.email || null,
           })
           .select()
           .single();
@@ -273,6 +286,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const newMerchant = data as MerchantRecord;
         setMerchant(newMerchant);
+        setUser(activeSession.user);
+        setSession(activeSession);
         return newMerchant;
       } catch (err) {
         const msg =
@@ -283,7 +298,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsMerchantLoading(false);
       }
     },
-    [user],
+    [],
   );
 
   // Register Trusted Payment Destination
