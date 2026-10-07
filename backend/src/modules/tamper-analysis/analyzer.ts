@@ -35,6 +35,11 @@ import { TamperAnalysisResult } from './types.js';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB limit
 
+export interface TamperAnalysisOptions {
+  candidateDecoded?: DecodedQr;
+  referenceDecoded?: DecodedQr;
+}
+
 /**
  * Deterministically compares a candidate QR image against a trusted reference QR image
  * to identify visual deviations, structural module differences, and boundary/sticker anomalies.
@@ -43,12 +48,14 @@ const MAX_IMAGE_BYTES = 10 * 1024 * 1024; // 10 MB limit
  *
  * @param referenceBuffer - In-memory image buffer of trusted reference QR.
  * @param candidateBuffer - In-memory image buffer of scanned candidate QR.
+ * @param options - Optional pre-decoded QR objects to avoid redundant image decoding.
  * @returns Strongly typed TamperAnalysisResult.
  * @throws TamperAnalysisError for invalid inputs or undetectable QR codes.
  */
 export async function analyzeQrVisualDifference(
   referenceBuffer: Buffer,
   candidateBuffer: Buffer,
+  options?: TamperAnalysisOptions,
 ): Promise<TamperAnalysisResult> {
   // 1. Guard against null, empty, non-buffer, or oversized inputs
   if (
@@ -81,36 +88,44 @@ export async function analyzeQrVisualDifference(
     );
   }
 
-  // 2. Decode and locate QR in trusted reference image
+  // 2. Decode and locate QR in trusted reference image (reuse pre-decoded if provided)
   let refDecoded: DecodedQr;
-  try {
-    refDecoded = await decodeQr(referenceBuffer);
-  } catch (err) {
-    if (err instanceof NoQrDetectedError) {
-      throw new ReferenceQrNotDetectedError();
+  if (options?.referenceDecoded) {
+    refDecoded = options.referenceDecoded;
+  } else {
+    try {
+      refDecoded = await decodeQr(referenceBuffer);
+    } catch (err) {
+      if (err instanceof NoQrDetectedError) {
+        throw new ReferenceQrNotDetectedError();
+      }
+      if (err instanceof InvalidImageError) {
+        throw new InvalidReferenceImageError(err.message);
+      }
+      throw new ReferenceQrNotDetectedError(
+        err instanceof Error ? err.message : 'QR detection failed on reference image.',
+      );
     }
-    if (err instanceof InvalidImageError) {
-      throw new InvalidReferenceImageError(err.message);
-    }
-    throw new ReferenceQrNotDetectedError(
-      err instanceof Error ? err.message : 'QR detection failed on reference image.',
-    );
   }
 
-  // 3. Decode and locate QR in candidate image
+  // 3. Decode and locate QR in candidate image (reuse pre-decoded if provided)
   let candDecoded: DecodedQr;
-  try {
-    candDecoded = await decodeQr(candidateBuffer);
-  } catch (err) {
-    if (err instanceof NoQrDetectedError) {
-      throw new CandidateQrNotDetectedError();
+  if (options?.candidateDecoded) {
+    candDecoded = options.candidateDecoded;
+  } else {
+    try {
+      candDecoded = await decodeQr(candidateBuffer);
+    } catch (err) {
+      if (err instanceof NoQrDetectedError) {
+        throw new CandidateQrNotDetectedError();
+      }
+      if (err instanceof InvalidImageError) {
+        throw new InvalidCandidateImageError(err.message);
+      }
+      throw new CandidateQrNotDetectedError(
+        err instanceof Error ? err.message : 'QR detection failed on candidate image.',
+      );
     }
-    if (err instanceof InvalidImageError) {
-      throw new InvalidCandidateImageError(err.message);
-    }
-    throw new CandidateQrNotDetectedError(
-      err instanceof Error ? err.message : 'QR detection failed on candidate image.',
-    );
   }
 
   // 4. Validate geometric sanity of detected corner quadrilaterals

@@ -303,36 +303,45 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
       // Step 2: Parse payment payload
       const parsedPayload = parsePaymentPayload(decoded.rawPayload);
 
-      // Step 3: Obtain relevant trusted registry destinations
-      let registryRecords: TrustedRegistryDestination[] = [];
-
-      if (parsedPayload.format === 'UPI_URI') {
-        const destinationType = 'VPA';
-        if (merchantId) {
-          registryRecords = await findActiveTrustedDestinationsForMerchant(
-            merchantId,
-            destinationType,
-          );
-        } else {
-          registryRecords = await findActiveTrustedDestinations(
+      // Step 3: Concurrently fetch trusted destinations, reference record, and image quality
+      const registryPromise = (async (): Promise<TrustedRegistryDestination[]> => {
+        if (parsedPayload.format === 'UPI_URI') {
+          const destinationType = 'VPA';
+          if (merchantId) {
+            return findActiveTrustedDestinationsForMerchant(merchantId, destinationType);
+          }
+          return findActiveTrustedDestinations(
             parsedPayload.paymentAddress,
             destinationType,
           );
         }
-      } else if (parsedPayload.format === 'GENERIC_URL') {
-        const destinationType = 'URL';
-        if (merchantId) {
-          registryRecords = await findActiveTrustedDestinationsForMerchant(
-            merchantId,
-            destinationType,
-          );
-        } else {
-          registryRecords = await findActiveTrustedDestinations(
-            parsedPayload.url,
-            destinationType,
-          );
+        if (parsedPayload.format === 'GENERIC_URL') {
+          const destinationType = 'URL';
+          if (merchantId) {
+            return findActiveTrustedDestinationsForMerchant(merchantId, destinationType);
+          }
+          return findActiveTrustedDestinations(parsedPayload.url, destinationType);
         }
-      }
+        return [];
+      })();
+
+      const referencePromise: Promise<ReferenceQrRecord | null> = merchantId
+        ? findActiveReferenceQrForMerchant(merchantId).catch((refErr: unknown) => {
+            request.log.warn(
+              { err: refErr, merchant_id: merchantId },
+              'Failed to retrieve merchant reference QR; proceeding with destination verification',
+            );
+            return null;
+          })
+        : Promise.resolve(null);
+
+      const imageQualityPromise = analyzeImageQuality(imageBuffer);
+
+      const [registryRecords, referenceRecord, imageQualityResult] = await Promise.all([
+        registryPromise,
+        referencePromise,
+        imageQualityPromise,
+      ]);
 
       const trustedDestinations: TrustedDestination[] = registryRecords
         .filter(
@@ -349,43 +358,36 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
       // Step 4: Run pure verification engine (destination matching)
       const destinationResult = verifyDestination(parsedPayload, trustedDestinations);
 
-      // Step 5: Deterministic image quality analysis
-      const imageQualityResult = await analyzeImageQuality(imageBuffer);
-
-      // Step 6: Physical QR Tamper Analysis (when merchant context is supplied and has an active reference QR)
-      const targetMerchantId = merchantId;
-      let referenceRecord: ReferenceQrRecord | null = null;
+      // Step 5: Physical QR Tamper Analysis (when merchant context is supplied and has an active reference QR)
       let referenceBuffer: Buffer | null = null;
       let tamperResult: TamperAnalysisResult | null = null;
 
-      if (targetMerchantId) {
+      if (referenceRecord) {
         try {
-          referenceRecord = await findActiveReferenceQrForMerchant(targetMerchantId);
-          if (referenceRecord) {
-            referenceBuffer = await downloadReferenceQrImage(referenceRecord.storagePath);
-            if (referenceBuffer) {
-              try {
-                tamperResult = await analyzeQrVisualDifference(
-                  referenceBuffer,
-                  imageBuffer,
-                );
-              } catch (tamperErr: unknown) {
-                request.log.warn(
-                  { err: tamperErr, merchant_id: targetMerchantId },
-                  'Physical tamper analysis could not be completed; visual comparison inconclusive',
-                );
-              }
+          referenceBuffer = await downloadReferenceQrImage(referenceRecord.storagePath);
+          if (referenceBuffer) {
+            try {
+              tamperResult = await analyzeQrVisualDifference(
+                referenceBuffer,
+                imageBuffer,
+                { candidateDecoded: decoded },
+              );
+            } catch (tamperErr: unknown) {
+              request.log.warn(
+                { err: tamperErr, merchant_id: merchantId },
+                'Physical tamper analysis could not be completed; visual comparison inconclusive',
+              );
             }
           }
         } catch (refErr: unknown) {
           request.log.warn(
-            { err: refErr, merchant_id: targetMerchantId },
-            'Failed to retrieve merchant reference QR; proceeding with destination verification',
+            { err: refErr, merchant_id: merchantId },
+            'Failed to download reference QR image; visual comparison inconclusive',
           );
         }
       }
 
-      // Step 7: Composite verification
+      // Step 6: Composite verification
       const compositeResult = composeVerificationResult(
         destinationResult,
         imageQualityResult,

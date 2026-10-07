@@ -3,6 +3,9 @@ export {
   generateExplanation,
   GEMINI_MODEL,
   DEFAULT_TIMEOUT_MS,
+  CIRCUIT_BREAKER_COOLDOWN_MS,
+  isGeminiCircuitOpen,
+  resetGeminiCircuitBreaker,
   type GenerateExplanationOptions,
 } from './gateway.js';
 export {

@@ -1,4 +1,4 @@
-export { analyzeQrVisualDifference } from './analyzer.js';
+export { analyzeQrVisualDifference, type TamperAnalysisOptions } from './analyzer.js';
 
 export type {
   AlignmentClassification,

@@ -64,10 +64,14 @@ describe('End-to-End QR Verification API (POST /api/v1/verify)', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    registryModule.clearReferenceRegistryCache();
+    geminiModule.resetGeminiCircuitBreaker();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    registryModule.clearReferenceRegistryCache();
+    geminiModule.resetGeminiCircuitBreaker();
   });
 
   it('1. Valid registered VPA with no merchant_id returns VERIFIED', async () => {
@@ -1346,6 +1350,194 @@ describe('End-to-End QR Verification API (POST /api/v1/verify)', () => {
       expect(inputArg).not.toHaveProperty('imageBuffer');
       expect(inputArg).not.toHaveProperty('apiKey');
       expect(inputArg).not.toHaveProperty('secretKey');
+    });
+
+    it('P25-1. Concurrent execution of destination lookup, reference lookup, and image quality', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+
+      let destCalled = false;
+      let refCalled = false;
+
+      vi.spyOn(
+        registryModule,
+        'findActiveTrustedDestinationsForMerchant',
+      ).mockImplementation(async () => {
+        destCalled = true;
+        return [
+          {
+            merchantId: 'merchant-101',
+            destinationType: 'VPA',
+            destinationValue: 'store@icici',
+            isActive: true,
+          },
+        ];
+      });
+
+      vi.spyOn(registryModule, 'findActiveReferenceQrForMerchant').mockImplementation(
+        async () => {
+          refCalled = true;
+          return null;
+        },
+      );
+
+      const req = createMultipartRequest(
+        { merchant_id: 'merchant-101' },
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      expect(destCalled).toBe(true);
+      expect(refCalled).toBe(true);
+      expect(res.json().verification_status).toBe('VERIFIED');
+    });
+
+    it('P25-2. Reference QR cache avoids duplicate private Storage downloads', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+
+      vi.spyOn(
+        registryModule,
+        'findActiveTrustedDestinationsForMerchant',
+      ).mockResolvedValue([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      vi.spyOn(registryModule, 'findActiveReferenceQrForMerchant').mockResolvedValue({
+        id: 'ref-1',
+        merchantId: 'merchant-101',
+        storagePath: 'merchant-101/ref.png',
+        payloadHash: 'hash',
+        rawPayload: 'upi://pay?pa=store@icici',
+        uploadedAt: new Date().toISOString(),
+      });
+
+      const downloadStorageSpy = vi.fn().mockResolvedValue({
+        data: {
+          arrayBuffer: async () =>
+            qrBuffer.buffer.slice(
+              qrBuffer.byteOffset,
+              qrBuffer.byteOffset + qrBuffer.byteLength,
+            ),
+        },
+        error: null,
+      });
+
+      vi.spyOn(supabaseServer.storage, 'from').mockReturnValue({
+        download: downloadStorageSpy,
+      } as unknown as ReturnType<typeof supabaseServer.storage.from>);
+
+      // First request
+      const req1 = createMultipartRequest(
+        { merchant_id: 'merchant-101' },
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res1 = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req1.headers,
+        payload: req1.payload,
+      });
+      expect(res1.statusCode).toBe(200);
+      expect(downloadStorageSpy).toHaveBeenCalledTimes(1);
+
+      // Second request with same merchant & reference QR
+      const req2 = createMultipartRequest(
+        { merchant_id: 'merchant-101' },
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res2 = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req2.headers,
+        payload: req2.payload,
+      });
+      expect(res2.statusCode).toBe(200);
+
+      // Storage download should NOT have been called a second time due to cache hit
+      expect(downloadStorageSpy).toHaveBeenCalledTimes(1);
+
+      // Both succeeded with VERIFIED
+      expect(res1.json().verification_status).toBe('VERIFIED');
+      expect(res2.json().verification_status).toBe('VERIFIED');
+    });
+
+    it('P25-3. Gemini timeout or 503 returns deterministic fallback quickly without altering status', async () => {
+      const qrBuffer = await generateQrBuffer(
+        'upi://pay?pa=store@icici&pn=Test%20Store&mc=5411',
+      );
+
+      vi.spyOn(registryModule, 'findActiveTrustedDestinations').mockResolvedValueOnce([
+        {
+          merchantId: 'merchant-101',
+          destinationType: 'VPA',
+          destinationValue: 'store@icici',
+          isActive: true,
+        },
+      ]);
+
+      // Mock Gemini to time out / fail
+      vi.spyOn(geminiModule, 'generateExplanation').mockResolvedValueOnce({
+        explanation: 'Deterministic fallback message.',
+        metadata: {
+          provider: 'deterministic_fallback',
+          model: null,
+        },
+      });
+
+      const req = createMultipartRequest(
+        {},
+        {
+          fieldname: 'image',
+          filename: 'qr.png',
+          mimetype: 'image/png',
+          content: qrBuffer,
+        },
+      );
+
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: req.headers,
+        payload: req.payload,
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.verification_status).toBe('VERIFIED');
+      expect(body.explanation_metadata.provider).toBe('deterministic_fallback');
+      expect(body.explanation).toBe('Deterministic fallback message.');
     });
   });
 });

@@ -180,6 +180,30 @@ export async function checkRegistryConnection(
   }
 }
 
+interface CachedReferenceImage {
+  buffer: Buffer;
+  cachedAt: number;
+}
+
+const REFERENCE_IMAGE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const referenceImageCache = new Map<string, CachedReferenceImage>();
+
+interface CachedReferenceRecord {
+  record: ReferenceQrRecord | null;
+  cachedAt: number;
+}
+
+const REFERENCE_RECORD_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+const referenceRecordCache = new Map<string, CachedReferenceRecord>();
+
+/**
+ * Clears the in-memory reference QR cache (useful for testing and deterministic resets).
+ */
+export function clearReferenceRegistryCache(): void {
+  referenceImageCache.clear();
+  referenceRecordCache.clear();
+}
+
 /**
  * Retrieves the latest active reference QR record registered for a merchant.
  *
@@ -195,12 +219,18 @@ export async function findActiveReferenceQrForMerchant(
     return null;
   }
 
+  const trimmedId = merchantId.trim();
+  const cached = referenceRecordCache.get(trimmedId);
+  if (cached && Date.now() - cached.cachedAt < REFERENCE_RECORD_CACHE_TTL_MS) {
+    return cached.record;
+  }
+
   const { data, error } = await client
     .from('reference_qrs')
     .select(
       'id, merchant_id, storage_path, payload_hash, raw_payload, finder_coordinates, uploaded_at',
     )
-    .eq('merchant_id', merchantId.trim())
+    .eq('merchant_id', trimmedId)
     .order('uploaded_at', { ascending: false })
     .limit(1);
 
@@ -211,6 +241,7 @@ export async function findActiveReferenceQrForMerchant(
   }
 
   if (!data || data.length === 0) {
+    referenceRecordCache.set(trimmedId, { record: null, cachedAt: Date.now() });
     return null;
   }
 
@@ -224,7 +255,7 @@ export async function findActiveReferenceQrForMerchant(
     uploaded_at: string;
   };
 
-  return {
+  const record: ReferenceQrRecord = {
     id: row.id,
     merchantId: row.merchant_id,
     storagePath: row.storage_path,
@@ -233,6 +264,14 @@ export async function findActiveReferenceQrForMerchant(
     finderCoordinates: row.finder_coordinates,
     uploadedAt: row.uploaded_at,
   };
+
+  if (referenceRecordCache.size >= 100) {
+    const firstKey = referenceRecordCache.keys().next().value;
+    if (firstKey) referenceRecordCache.delete(firstKey);
+  }
+  referenceRecordCache.set(trimmedId, { record, cachedAt: Date.now() });
+
+  return record;
 }
 
 /**
@@ -250,17 +289,31 @@ export async function downloadReferenceQrImage(
     return null;
   }
 
+  const trimmedPath = storagePath.trim();
+  const cached = referenceImageCache.get(trimmedPath);
+  if (cached && Date.now() - cached.cachedAt < REFERENCE_IMAGE_CACHE_TTL_MS) {
+    return cached.buffer;
+  }
+
   try {
     const { data, error } = await client.storage
       .from('reference-qrs')
-      .download(storagePath.trim());
+      .download(trimmedPath);
 
     if (error || !data) {
       return null;
     }
 
     const arrayBuffer = await data.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(arrayBuffer);
+
+    if (referenceImageCache.size >= 100) {
+      const firstKey = referenceImageCache.keys().next().value;
+      if (firstKey) referenceImageCache.delete(firstKey);
+    }
+    referenceImageCache.set(trimmedPath, { buffer, cachedAt: Date.now() });
+
+    return buffer;
   } catch {
     return null;
   }
@@ -320,6 +373,10 @@ export async function saveReferenceQr(
     uploaded_at: string;
   };
 
+  // Invalidate in-memory caches for this merchant and storage path
+  referenceRecordCache.delete(merchantId.trim());
+  referenceImageCache.delete(storagePath.trim());
+
   return {
     id: row.id,
     merchantId: row.merchant_id,
@@ -348,6 +405,9 @@ export async function deleteReferenceQrForMerchant(
 
   const trimmedId = merchantId.trim();
 
+  // Invalidate in-memory caches
+  referenceRecordCache.delete(trimmedId);
+
   // 1. Find existing records to identify storage paths to remove
   const { data: existingRecords } = await client
     .from('reference_qrs')
@@ -359,6 +419,10 @@ export async function deleteReferenceQrForMerchant(
   )
     .map((r) => r.storage_path)
     .filter((p: unknown): p is string => typeof p === 'string' && p.length > 0);
+
+  for (const p of storagePaths) {
+    referenceImageCache.delete(p.trim());
+  }
 
   // 2. Delete database records
   const { error: dbError } = await client

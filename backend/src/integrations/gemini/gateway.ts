@@ -2,6 +2,7 @@ import { GoogleGenAI, Type } from '@google/genai';
 import { getGeminiClient } from './client.js';
 import { getDeterministicFallbackExplanation } from './fallback.js';
 import { GEMINI_SYSTEM_INSTRUCTION, buildExplanationPrompt } from './prompt.js';
+import { env } from '../../config/env.js';
 import type {
   ExplanationInput,
   ExplanationResult,
@@ -9,7 +10,18 @@ import type {
 } from './types.js';
 
 export const GEMINI_MODEL = 'gemini-3.8-flash';
-export const DEFAULT_TIMEOUT_MS = 5000;
+export const DEFAULT_TIMEOUT_MS = 2000;
+export const CIRCUIT_BREAKER_COOLDOWN_MS = 30000;
+
+let circuitBreakerOpenUntil = 0;
+
+export function isGeminiCircuitOpen(): boolean {
+  return Date.now() < circuitBreakerOpenUntil;
+}
+
+export function resetGeminiCircuitBreaker(): void {
+  circuitBreakerOpenUntil = 0;
+}
 
 export interface GenerateExplanationOptions {
   client?: GoogleGenAI | null;
@@ -160,19 +172,30 @@ export async function generateExplanation(
     },
   };
 
+  // If circuit breaker is open (e.g. recent 429 quota exhaustion or 503), return fallback immediately
+  if (isGeminiCircuitOpen()) {
+    return fallbackResult;
+  }
+
   const client = options?.client !== undefined ? options.client : getGeminiClient();
   if (!client) {
     return fallbackResult;
   }
 
-  const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = options?.timeoutMs ?? env.GEMINI_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS;
   const prompt = buildExplanationPrompt(input);
 
+  const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;
 
   try {
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch {
+          // ignore abort failures
+        }
         reject(new Error(`Gemini request timed out after ${timeoutMs}ms`));
       }, timeoutMs);
     });
@@ -204,8 +227,9 @@ export async function generateExplanation(
           },
           required: ['summary', 'key_findings', 'action'],
         },
-        maxOutputTokens: 500,
+        maxOutputTokens: 200,
         temperature: 0.1,
+        abortSignal: controller.signal,
       },
     });
 
@@ -238,8 +262,28 @@ export async function generateExplanation(
         model: GEMINI_MODEL,
       },
     };
-  } catch {
+  } catch (err: unknown) {
     if (timer) clearTimeout(timer);
+    try {
+      controller.abort();
+    } catch {
+      // ignore
+    }
+
+    // Check for rate-limiting, quota exhaustion, or service unavailability to trip circuit breaker
+    const errStr = String(err).toLowerCase();
+    const errStatus = (err as { status?: number })?.status;
+    if (
+      errStatus === 429 ||
+      errStatus === 503 ||
+      errStr.includes('resource_exhausted') ||
+      errStr.includes('quota') ||
+      errStr.includes('503') ||
+      errStr.includes('unavailable')
+    ) {
+      circuitBreakerOpenUntil = Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS;
+    }
+
     return fallbackResult;
   }
 }

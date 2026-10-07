@@ -22,6 +22,7 @@ export interface EnvironmentConfig {
   SUPABASE_URL: string;
   SUPABASE_SECRET_KEY: string;
   GEMINI_API_KEY?: string;
+  GEMINI_TIMEOUT_MS: number;
 }
 
 function parsePort(val: string | undefined, defaultPort: number): number {
@@ -29,6 +30,15 @@ function parsePort(val: string | undefined, defaultPort: number): number {
   const parsed = parseInt(val, 10);
   if (isNaN(parsed) || parsed <= 0 || parsed > 65535) {
     return defaultPort;
+  }
+  return parsed;
+}
+
+function parseTimeout(val: string | undefined, defaultMs: number): number {
+  if (!val) return defaultMs;
+  const parsed = parseInt(val, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    return defaultMs;
   }
   return parsed;
 }
@@ -81,4 +91,5 @@ export const env: EnvironmentConfig = {
   SUPABASE_URL: supabaseUrl,
   SUPABASE_SECRET_KEY: supabaseSecretKey,
   GEMINI_API_KEY: geminiApiKey,
+  GEMINI_TIMEOUT_MS: parseTimeout(process.env['GEMINI_TIMEOUT_MS'], 2000),
 };

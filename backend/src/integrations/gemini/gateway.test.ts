@@ -7,6 +7,8 @@ import {
   DETERMINISTIC_FALLBACKS,
   buildExplanationPrompt,
   GEMINI_SYSTEM_INSTRUCTION,
+  isGeminiCircuitOpen,
+  resetGeminiCircuitBreaker,
 } from './index.js';
 import type { ExplanationInput } from './types.js';
 import type { CanonicalCompositeStatus } from '../../modules/composite-verification/types.js';
@@ -38,6 +40,7 @@ function createMockInput(
 describe('QRShield Gemini Explanation Layer', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetGeminiCircuitBreaker();
   });
 
   // 1. Successful mocked Gemini explanation
@@ -401,5 +404,137 @@ describe('QRShield Gemini Explanation Layer', () => {
 
     expect(result.metadata.provider).toBe('deterministic_fallback');
     expect(result.explanation).toBe(DETERMINISTIC_FALLBACKS.VERIFIED);
+  });
+
+  // 22. Gemini timeout returns deterministic fallback quickly
+  it('22. Gemini timeout returns deterministic fallback promptly within configured bounds', async () => {
+    const mockClient = {
+      models: {
+        generateContent: vi.fn().mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(resolve, 5000);
+            }),
+        ),
+      },
+    } as unknown as GoogleGenAI;
+
+    const input = createMockInput('VERIFIED');
+    const start = Date.now();
+    const result = await generateExplanation(input, {
+      client: mockClient,
+      timeoutMs: 40,
+    });
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(150);
+    expect(result.metadata.provider).toBe('deterministic_fallback');
+    expect(result.explanation).toBe(DETERMINISTIC_FALLBACKS.VERIFIED);
+  });
+
+  // 23. Gemini 503 returns deterministic fallback quickly and trips circuit breaker
+  it('23. Gemini 503 returns deterministic fallback quickly and trips circuit breaker', async () => {
+    const mockClient = {
+      models: {
+        generateContent: vi.fn().mockRejectedValue({
+          status: 503,
+          message: 'The model is overloaded. Please try again later.',
+        }),
+      },
+    } as unknown as GoogleGenAI;
+
+    const input = createMockInput('DESTINATION_MISMATCH');
+    const start = Date.now();
+    const result = await generateExplanation(input, { client: mockClient });
+    const elapsed = Date.now() - start;
+
+    expect(elapsed).toBeLessThan(100);
+    expect(result.metadata.provider).toBe('deterministic_fallback');
+    expect(result.explanation).toBe(DETERMINISTIC_FALLBACKS.DESTINATION_MISMATCH);
+    expect(isGeminiCircuitOpen()).toBe(true);
+  });
+
+  // 24. Circuit breaker fast-path returns deterministic fallback without attempting client
+  it('24. Circuit breaker returns fallback immediately without making upstream request', async () => {
+    // Trip circuit breaker with 429
+    const failingClient = {
+      models: {
+        generateContent: vi.fn().mockRejectedValue({
+          status: 429,
+          message: 'Resource exhausted / quota exceeded',
+        }),
+      },
+    } as unknown as GoogleGenAI;
+
+    await generateExplanation(createMockInput('UNVERIFIED'), { client: failingClient });
+    expect(isGeminiCircuitOpen()).toBe(true);
+
+    // Now call with a client that would hang if called
+    const hangingClient = {
+      models: {
+        generateContent: vi
+          .fn()
+          .mockImplementation(() => new Promise((resolve) => setTimeout(resolve, 5000))),
+      },
+    } as unknown as GoogleGenAI;
+
+    const start = Date.now();
+    const fastResult = await generateExplanation(createMockInput('UNVERIFIED'), {
+      client: hangingClient,
+    });
+    const elapsed = Date.now() - start;
+
+    // Must be near instantaneous (< 20ms) and hangingClient should NEVER have been called
+    expect(elapsed).toBeLessThan(50);
+    expect(hangingClient.models.generateContent).not.toHaveBeenCalled();
+    expect(fastResult.metadata.provider).toBe('deterministic_fallback');
+    expect(fastResult.explanation).toBe(DETERMINISTIC_FALLBACKS.UNVERIFIED);
+  });
+
+  // 25. Destination mismatch remains DESTINATION_MISMATCH even if model claims verified
+  it('25. Destination mismatch remains DESTINATION_MISMATCH even if Gemini says otherwise', async () => {
+    const mockClient = {
+      models: {
+        generateContent: vi.fn().mockResolvedValue({
+          text: JSON.stringify({
+            summary: 'The destination matches the registered merchant account.',
+            key_findings: ['Destination match confirmed.'],
+            action: 'Proceed with payment.',
+          }),
+        }),
+      },
+    } as unknown as GoogleGenAI;
+
+    const input = createMockInput('DESTINATION_MISMATCH', {
+      destinationMatch: false,
+      riskFactors: ['DESTINATION_CONFLICT'],
+    });
+
+    const result = await generateExplanation(input, { client: mockClient });
+
+    // Contradictory text claiming "matches" on DESTINATION_MISMATCH is rejected
+    expect(result.metadata.provider).toBe('deterministic_fallback');
+    expect(result.explanation).toBe(DETERMINISTIC_FALLBACKS.DESTINATION_MISMATCH);
+    expect(input.canonicalStatus).toBe('DESTINATION_MISMATCH');
+  });
+
+  // 26. Reference QR security: prompt never receives raw reference image data
+  it('26. Reference QR security remains intact in explanation prompt', () => {
+    const input = createMockInput('SUSPICIOUS', {
+      tamperSummary: {
+        evaluated: true,
+        tamperDetected: true,
+        confidenceScore: 0.95,
+        riskScore: 0.42,
+        anomalyFlags: ['BOUNDARY_EDGE_ANOMALY'],
+      },
+    });
+
+    const prompt = buildExplanationPrompt(input);
+    expect(prompt).toContain('BOUNDARY_EDGE_ANOMALY');
+    expect(prompt).not.toContain('referenceBuffer');
+    expect(prompt).not.toContain('storagePath');
+    expect(prompt).not.toContain('imageBuffer');
+    expect(prompt).not.toContain('data:image');
   });
 });
