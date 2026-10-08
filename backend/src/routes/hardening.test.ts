@@ -476,5 +476,23 @@ describe('Prompt 023 — Security, Edge & Hardening Suite', () => {
       // Must be safely rejected and fall back
       expect(result.metadata.provider).toBe('deterministic_fallback');
     });
+
+    it('rejects requests from disallowed CORS origins with HTTP 403 Forbidden', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/verify',
+        headers: {
+          origin: 'https://malicious-disallowed-origin.example.com',
+        },
+      });
+
+      expect(res.statusCode).toBe(403);
+      const json = JSON.parse(res.body);
+      expect(json.status).toBe('error');
+      expect(json.statusCode).toBe(403);
+      expect(json.error).toBe('Forbidden');
+      expect(json.message).toBe('Not allowed by CORS');
+      expect(res.body).not.toContain('stack');
+    });
   });
 });

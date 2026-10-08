@@ -71,22 +71,6 @@ export const Header: React.FC = () => {
               </span>
             </div>
           </Link>
-
-          <span
-            style={{
-              fontSize: '0.6875rem',
-              fontFamily: 'var(--font-mono)',
-              padding: '2px 6px',
-              borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'var(--color-surface-raised)',
-              border: '1px solid var(--color-border-subtle)',
-              color: 'var(--color-text-muted)',
-              textTransform: 'uppercase',
-              letterSpacing: '0.04em',
-            }}
-          >
-            UI Foundation
-          </span>
         </div>
 
         {/* Desktop Navigation */}

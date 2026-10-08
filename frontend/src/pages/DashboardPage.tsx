@@ -613,13 +613,13 @@ export const DashboardPage: React.FC = () => {
                 />
                 <DataRow
                   label="Authenticated User"
-                  value={user?.email || '—'}
+                  value={user?.email || '-'}
                   isMonospace
                 />
                 <DataRow label="Merchant Identifier" value={merchant.id} isMonospace />
                 <DataRow
                   label="Contact Email"
-                  value={merchant.contact_email || '—'}
+                  value={merchant.contact_email || '-'}
                   isMonospace
                 />
                 <DataRow

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { APP_NAME } from '../lib/constants';
 
 export const Footer: React.FC = () => {
@@ -45,18 +46,38 @@ export const Footer: React.FC = () => {
                   fontSize: '0.75rem',
                 }}
               >
-                — Payment QR Verification
+                : Payment QR Verification
               </span>
             </div>
 
             <div
               style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '0.6875rem',
-                color: 'var(--color-text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-4)',
+                fontSize: '0.75rem',
               }}
             >
-              UI Foundation Phase
+              <Link
+                to="/privacy"
+                style={{
+                  color: 'var(--color-text-secondary)',
+                  textDecoration: 'none',
+                  transition: 'color 150ms ease',
+                }}
+              >
+                Privacy Policy
+              </Link>
+              <Link
+                to="/terms"
+                style={{
+                  color: 'var(--color-text-secondary)',
+                  textDecoration: 'none',
+                  transition: 'color 150ms ease',
+                }}
+              >
+                Terms of Service
+              </Link>
             </div>
           </div>
 

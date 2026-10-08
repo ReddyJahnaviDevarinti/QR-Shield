@@ -66,7 +66,7 @@ describe('Frontend Security & Isolation Tests', () => {
   });
 
   // ==================================================
-  // PROMPT 021A PART 12 — FRONTEND SECURITY TESTS
+  // PROMPT 021A PART 12 - FRONTEND SECURITY TESTS
   // ==================================================
 
   it('21. reference API sends Authorization header', async () => {
@@ -216,7 +216,7 @@ describe('Frontend Security & Isolation Tests', () => {
   });
 
   // ==================================================
-  // PROMPT 024-RLS-FIX — MERCHANT RLS REGRESSION TESTS
+  // PROMPT 024-RLS-FIX - MERCHANT RLS REGRESSION TESTS
   // ==================================================
 
   it('28. verifies createMerchantProfile derives user_id authoritatively from active session', () => {

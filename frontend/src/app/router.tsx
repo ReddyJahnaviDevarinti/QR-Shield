@@ -5,6 +5,8 @@ import { VerifyPage } from '../pages/VerifyPage';
 import { SampleLabPage } from '../pages/SampleLabPage';
 import { DashboardPage } from '../pages/DashboardPage';
 import { AuthPage } from '../pages/AuthPage';
+import { PrivacyPage } from '../pages/PrivacyPage';
+import { TermsPage } from '../pages/TermsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { ProtectedRoute } from '../components/ProtectedRoute';
 
@@ -41,6 +43,14 @@ export const router = createBrowserRouter(
               <DashboardPage />
             </ProtectedRoute>
           ),
+        },
+        {
+          path: 'privacy',
+          element: <PrivacyPage />,
+        },
+        {
+          path: 'terms',
+          element: <TermsPage />,
         },
         {
           path: '404',

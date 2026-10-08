@@ -642,8 +642,8 @@ export const VerifyPage: React.FC = () => {
                     result.composite_evidence.tamper.available
                       ? 'AVAILABLE'
                       : result.composite_evidence.tamper.reference_available === false
-                        ? 'NOT AVAILABLE — merchant has no registered reference QR.'
-                        : 'NOT AVAILABLE — scan conducted without registered reference QR.'
+                        ? 'NOT AVAILABLE: merchant has no registered reference QR.'
+                        : 'NOT AVAILABLE: scan conducted without registered reference QR.'
                   }
                   isMonospace={false}
                 />
@@ -659,14 +659,14 @@ export const VerifyPage: React.FC = () => {
                           ? result.composite_evidence.tamper.visual_deviation_index.toFixed(
                               4,
                             )
-                          : '—'
+                          : '-'
                       }
                       isMonospace
                     />
                     <DataRow
                       label="Alignment Classification"
                       value={
-                        result.composite_evidence.tamper.alignment_classification || '—'
+                        result.composite_evidence.tamper.alignment_classification || '-'
                       }
                       isMonospace
                     />
@@ -677,7 +677,7 @@ export const VerifyPage: React.FC = () => {
                         result.composite_evidence.tamper.matrix_mismatch_ratio !==
                           undefined
                           ? `${(result.composite_evidence.tamper.matrix_mismatch_ratio * 100).toFixed(1)}%`
-                          : '—'
+                          : '-'
                       }
                       isMonospace
                     />

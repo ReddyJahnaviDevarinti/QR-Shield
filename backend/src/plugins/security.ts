@@ -25,7 +25,10 @@ async function securityPluginImpl(app: FastifyInstance): Promise<void> {
         return;
       }
 
-      callback(new Error(`Origin ${origin} not permitted by CORS policy`), false);
+      const corsError = new Error('Not allowed by CORS');
+      (corsError as unknown as { statusCode: number }).statusCode = 403;
+      (corsError as unknown as { name: string }).name = 'Forbidden';
+      callback(corsError, false);
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true,
