@@ -1,14 +1,22 @@
 import fastify, { FastifyError, FastifyInstance, FastifyServerOptions } from 'fastify';
 import fastifyMultipart from '@fastify/multipart';
 import { env } from './config/env.js';
-import { securityPlugin } from './plugins/security.js';
+import { securityPlugin, type RateLimitPluginOptions } from './plugins/security.js';
 import { healthRoutes } from './routes/health.js';
 import { verifyRoutes } from './routes/verify.js';
 import { referenceQrRoutes } from './routes/reference-qr.js';
+import { destinationRoutes } from './routes/destinations.js';
 import { sampleRoutes } from './routes/samples.js';
 
-export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
+export interface AppOptions extends FastifyServerOptions {
+  rateLimit?: RateLimitPluginOptions;
+}
+
+export function buildApp(opts: AppOptions = {}): FastifyInstance {
+  const { rateLimit: rateLimitOpts, ...serverOpts } = opts;
+
   const app = fastify({
+    trustProxy: serverOpts.trustProxy ?? false,
     logger: {
       level: env.NODE_ENV === 'test' ? 'silent' : 'info',
       redact: [
@@ -29,7 +37,7 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
         '*.buffer',
       ],
     },
-    ...opts,
+    ...serverOpts,
   });
 
   // Centralized Error Handler (Task 11)
@@ -59,6 +67,28 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
       });
     }
 
+    if (
+      statusCode === 429 ||
+      error.code === 'FST_RATE_LIMIT' ||
+      (error as unknown as { error?: { code?: string } }).error?.code ===
+        'E_RATE_LIMIT_EXCEEDED'
+    ) {
+      const errorObj = (
+        error as unknown as { error?: { message?: string; details?: string } }
+      ).error;
+      return reply.status(429).send({
+        error: {
+          code: 'E_RATE_LIMIT_EXCEEDED',
+          message:
+            errorObj?.message ||
+            'Too many requests. Please slow down and try again shortly.',
+          details:
+            errorObj?.details ||
+            'Rate limit quota exceeded. Please retry after cooldown period.',
+        },
+      });
+    }
+
     const message =
       isClientError || env.NODE_ENV !== 'production'
         ? error.message
@@ -83,7 +113,7 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
   });
 
   // Register core plugins
-  app.register(securityPlugin);
+  app.register(securityPlugin, { rateLimit: rateLimitOpts });
   app.register(fastifyMultipart, {
     limits: {
       fileSize: 10 * 1024 * 1024,
@@ -93,6 +123,7 @@ export function buildApp(opts: FastifyServerOptions = {}): FastifyInstance {
   app.register(healthRoutes);
   app.register(verifyRoutes);
   app.register(referenceQrRoutes);
+  app.register(destinationRoutes);
   app.register(sampleRoutes);
 
   return app;

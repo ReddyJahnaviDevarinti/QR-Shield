@@ -17,6 +17,9 @@ import {
   fetchReferenceQr,
   uploadReferenceQr as apiUploadReferenceQr,
   deleteReferenceQr as apiDeleteReferenceQr,
+  fetchDestinations,
+  createDestination as apiCreateDestination,
+  updateDestinationApi as apiUpdateDestination,
 } from '../lib/api';
 
 export interface AuthContextType {
@@ -91,17 +94,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         // 2. Query destinations and reference QR if merchant exists
         if (merchantData?.id) {
-          const { data: destData, error: destError } = await supabase
-            .from('payment_destinations')
-            .select('*')
-            .eq('merchant_id', merchantData.id)
-            .order('registered_at', { ascending: false });
+          try {
+            const dests = await fetchDestinations(merchantData.id, accessToken);
+            setDestinations(dests);
+          } catch {
+            const { data: destData, error: destError } = await supabase
+              .from('payment_destinations')
+              .select('*')
+              .eq('merchant_id', merchantData.id)
+              .order('registered_at', { ascending: false });
 
-          if (destError) {
-            throw new Error(`Failed to load payment destinations: ${destError.message}`);
+            if (destError) {
+              throw new Error(
+                `Failed to load payment destinations: ${destError.message}`,
+              );
+            }
+
+            setDestinations((destData as PaymentDestinationRecord[]) || []);
           }
-
-          setDestinations((destData as PaymentDestinationRecord[]) || []);
 
           try {
             const ref = await fetchReferenceQr(merchantData.id, accessToken);
@@ -320,25 +330,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Destination value is required.');
         }
 
-        const normalizedValue =
-          destinationType === 'VPA' ? trimmedValue.toLowerCase() : trimmedValue;
+        const newDestination = await apiCreateDestination(
+          merchant.id,
+          {
+            destinationType,
+            destinationValue: trimmedValue,
+            isActive,
+          },
+          session?.access_token,
+        );
 
-        const { data, error } = await supabase
-          .from('payment_destinations')
-          .insert({
-            merchant_id: merchant.id,
-            destination_type: destinationType,
-            destination_value: normalizedValue,
-            is_active: isActive,
-          })
-          .select()
-          .single();
-
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        const newDestination = data as PaymentDestinationRecord;
         setDestinations((prev) => [newDestination, ...prev]);
         return newDestination;
       } catch (err) {
@@ -350,7 +351,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsMerchantLoading(false);
       }
     },
-    [merchant],
+    [merchant, session],
   );
 
   // Update existing destination
@@ -366,27 +367,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAuthError(null);
       setIsMerchantLoading(true);
       try {
-        const payload: { destination_value?: string; is_active?: boolean } = {};
-        if (updates.destination_value !== undefined) {
-          payload.destination_value = updates.destination_value.trim();
-        }
-        if (updates.is_active !== undefined) {
-          payload.is_active = updates.is_active;
-        }
+        const updatedDestination = await apiUpdateDestination(
+          merchant.id,
+          destinationId,
+          updates,
+          session?.access_token,
+        );
 
-        const { data, error } = await supabase
-          .from('payment_destinations')
-          .update(payload)
-          .eq('id', destinationId)
-          .eq('merchant_id', merchant.id)
-          .select()
-          .single();
-
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        const updatedDestination = data as PaymentDestinationRecord;
         setDestinations((prev) =>
           prev.map((d) => (d.id === destinationId ? updatedDestination : d)),
         );
@@ -400,7 +387,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsMerchantLoading(false);
       }
     },
-    [merchant],
+    [merchant, session],
   );
 
   // Upload Reference QR Image

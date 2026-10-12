@@ -23,6 +23,11 @@ export interface EnvironmentConfig {
   SUPABASE_SECRET_KEY: string;
   GEMINI_API_KEY?: string;
   GEMINI_TIMEOUT_MS: number;
+  RATE_LIMIT_ENABLED: boolean;
+  RATE_LIMIT_VERIFY_MAX: number;
+  RATE_LIMIT_MERCHANT_MAX: number;
+  RATE_LIMIT_WINDOW_MS: number;
+  IS_RENDER: boolean;
 }
 
 function parsePort(val: string | undefined, defaultPort: number): number {
@@ -41,6 +46,20 @@ function parseTimeout(val: string | undefined, defaultMs: number): number {
     return defaultMs;
   }
   return parsed;
+}
+
+function parseNumber(val: string | undefined, defaultVal: number): number {
+  if (!val) return defaultVal;
+  const parsed = parseInt(val, 10);
+  if (isNaN(parsed) || parsed <= 0) {
+    return defaultVal;
+  }
+  return parsed;
+}
+
+function parseBoolean(val: string | undefined, defaultVal: boolean): boolean {
+  if (val === undefined || val === '') return defaultVal;
+  return val.toLowerCase() === 'true' || val === '1';
 }
 
 function parseAllowedOrigins(val: string | undefined, nodeEnv: string): string[] {
@@ -92,4 +111,15 @@ export const env: EnvironmentConfig = {
   SUPABASE_SECRET_KEY: supabaseSecretKey,
   GEMINI_API_KEY: geminiApiKey,
   GEMINI_TIMEOUT_MS: parseTimeout(process.env['GEMINI_TIMEOUT_MS'], 2000),
+  RATE_LIMIT_ENABLED: parseBoolean(process.env['RATE_LIMIT_ENABLED'], true),
+  RATE_LIMIT_VERIFY_MAX: parseNumber(
+    process.env['RATE_LIMIT_VERIFY_MAX'],
+    nodeEnv === 'test' ? 1000 : 30,
+  ),
+  RATE_LIMIT_MERCHANT_MAX: parseNumber(
+    process.env['RATE_LIMIT_MERCHANT_MAX'],
+    nodeEnv === 'test' ? 1000 : 100,
+  ),
+  RATE_LIMIT_WINDOW_MS: parseNumber(process.env['RATE_LIMIT_WINDOW_MS'], 60000),
+  IS_RENDER: parseBoolean(process.env['RENDER'], false),
 };

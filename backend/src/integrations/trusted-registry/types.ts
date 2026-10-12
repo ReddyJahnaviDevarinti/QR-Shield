@@ -37,3 +37,15 @@ export interface ReferenceQrRecord {
   /** ISO timestamp when the reference QR was uploaded */
   uploadedAt: string;
 }
+
+/**
+ * Complete payment destination record matching PostgreSQL schema.
+ */
+export interface PaymentDestinationRecord {
+  id: string;
+  merchant_id: string;
+  destination_type: RegistryDestinationType;
+  destination_value: string;
+  is_active: boolean;
+  registered_at: string;
+}

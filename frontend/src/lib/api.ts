@@ -1,4 +1,8 @@
-import { VerificationStatus, ReferenceQrRecord } from '../types';
+import {
+  VerificationStatus,
+  ReferenceQrRecord,
+  PaymentDestinationRecord,
+} from '../types';
 
 export type CanonicalCompositeStatus = VerificationStatus;
 
@@ -374,6 +378,169 @@ export async function deleteReferenceQr(
       .catch(() => null)) as ApiErrorResponse | null;
     throw new ApiClientError(
       errorBody?.error?.message || 'Failed to delete reference QR.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
+}
+
+/**
+ * Fetches registered payment destinations for a merchant via authenticated API.
+ */
+export async function fetchDestinations(
+  merchantId: string,
+  accessToken?: string,
+): Promise<PaymentDestinationRecord[]> {
+  const baseUrl = getApiBaseUrl();
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/merchants/${encodeURIComponent(merchantId)}/destinations`,
+    {
+      method: 'GET',
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to fetch payment destinations.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
+
+  const data = (await response.json()) as { destinations: PaymentDestinationRecord[] };
+  return data.destinations || [];
+}
+
+/**
+ * Creates a new payment destination record for a merchant via authenticated API.
+ */
+export async function createDestination(
+  merchantId: string,
+  payload: {
+    destinationType: 'VPA' | 'URL' | 'ACCOUNT';
+    destinationValue: string;
+    isActive?: boolean;
+  },
+  accessToken?: string,
+): Promise<PaymentDestinationRecord> {
+  const baseUrl = getApiBaseUrl();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/merchants/${encodeURIComponent(merchantId)}/destinations`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        destination_type: payload.destinationType,
+        destination_value: payload.destinationValue,
+        is_active: payload.isActive ?? true,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to create payment destination.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
+
+  const data = (await response.json()) as { destination: PaymentDestinationRecord };
+  return data.destination;
+}
+
+/**
+ * Updates an existing payment destination record for a merchant via authenticated API.
+ */
+export async function updateDestinationApi(
+  merchantId: string,
+  destinationId: string,
+  updates: { destination_value?: string; is_active?: boolean },
+  accessToken?: string,
+): Promise<PaymentDestinationRecord> {
+  const baseUrl = getApiBaseUrl();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/merchants/${encodeURIComponent(merchantId)}/destinations/${encodeURIComponent(destinationId)}`,
+    {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(updates),
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to update payment destination.',
+      response.status,
+      errorBody?.error?.code || `E_HTTP_${response.status}`,
+      errorBody?.error?.details,
+    );
+  }
+
+  const data = (await response.json()) as { destination: PaymentDestinationRecord };
+  return data.destination;
+}
+
+/**
+ * Deletes a payment destination record for a merchant via authenticated API.
+ */
+export async function deleteDestinationApi(
+  merchantId: string,
+  destinationId: string,
+  accessToken?: string,
+): Promise<void> {
+  const baseUrl = getApiBaseUrl();
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+
+  const response = await fetch(
+    `${baseUrl}/api/v1/merchants/${encodeURIComponent(merchantId)}/destinations/${encodeURIComponent(destinationId)}`,
+    {
+      method: 'DELETE',
+      headers,
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = (await response
+      .json()
+      .catch(() => null)) as ApiErrorResponse | null;
+    throw new ApiClientError(
+      errorBody?.error?.message || 'Failed to delete payment destination.',
       response.status,
       errorBody?.error?.code || `E_HTTP_${response.status}`,
       errorBody?.error?.details,

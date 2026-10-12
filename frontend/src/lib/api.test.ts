@@ -233,4 +233,132 @@ describe('Frontend API Client (verifyQr)', () => {
     expect(capturedMethod).toBe('DELETE');
     expect(capturedHeaders?.['Authorization']).toBe('Bearer test-access-token');
   });
+
+  it('11. fetchDestinations sends GET with Bearer token and returns destinations array', async () => {
+    let capturedUrl = '';
+    let capturedHeaders: Record<string, string> | undefined;
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      capturedUrl = String(url);
+      capturedHeaders = options?.headers as Record<string, string>;
+      return new Response(
+        JSON.stringify({
+          destinations: [
+            {
+              id: 'dest-1',
+              merchant_id: 'merch-123',
+              destination_type: 'VPA',
+              destination_value: 'store@icici',
+              is_active: true,
+              registered_at: '2026-10-01T00:00:00Z',
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+
+    const { fetchDestinations } = await import('./api');
+    const result = await fetchDestinations('merch-123', 'test-jwt');
+
+    expect(capturedUrl).toContain('/api/v1/merchants/merch-123/destinations');
+    expect(capturedHeaders?.['Authorization']).toBe('Bearer test-jwt');
+    expect(result).toHaveLength(1);
+    expect(result[0]?.destination_value).toBe('store@icici');
+  });
+
+  it('12. createDestination sends POST with payload and Bearer token', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+    let capturedBody = '';
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      capturedUrl = String(url);
+      capturedMethod = options?.method || '';
+      capturedBody = String(options?.body || '');
+      return new Response(
+        JSON.stringify({
+          destination: {
+            id: 'dest-2',
+            merchant_id: 'merch-123',
+            destination_type: 'VPA',
+            destination_value: 'new@icici',
+            is_active: true,
+            registered_at: '2026-10-01T00:00:00Z',
+          },
+        }),
+        { status: 201, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+
+    const { createDestination } = await import('./api');
+    const result = await createDestination(
+      'merch-123',
+      { destinationType: 'VPA', destinationValue: 'new@icici', isActive: true },
+      'test-jwt',
+    );
+
+    expect(capturedUrl).toContain('/api/v1/merchants/merch-123/destinations');
+    expect(capturedMethod).toBe('POST');
+    expect(JSON.parse(capturedBody).destination_value).toBe('new@icici');
+    expect(result.id).toBe('dest-2');
+  });
+
+  it('13. updateDestinationApi sends PUT with updates and Bearer token', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+    let capturedBody = '';
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      capturedUrl = String(url);
+      capturedMethod = options?.method || '';
+      capturedBody = String(options?.body || '');
+      return new Response(
+        JSON.stringify({
+          destination: {
+            id: 'dest-2',
+            merchant_id: 'merch-123',
+            destination_type: 'VPA',
+            destination_value: 'updated@icici',
+            is_active: false,
+            registered_at: '2026-10-01T00:00:00Z',
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      );
+    });
+
+    const { updateDestinationApi } = await import('./api');
+    const result = await updateDestinationApi(
+      'merch-123',
+      'dest-2',
+      { is_active: false },
+      'test-jwt',
+    );
+
+    expect(capturedUrl).toContain('/api/v1/merchants/merch-123/destinations/dest-2');
+    expect(capturedMethod).toBe('PUT');
+    expect(JSON.parse(capturedBody).is_active).toBe(false);
+    expect(result.is_active).toBe(false);
+  });
+
+  it('14. deleteDestinationApi sends DELETE with Bearer token', async () => {
+    let capturedUrl = '';
+    let capturedMethod = '';
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, options) => {
+      capturedUrl = String(url);
+      capturedMethod = options?.method || '';
+      return new Response(JSON.stringify({ success: true }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    });
+
+    const { deleteDestinationApi } = await import('./api');
+    await deleteDestinationApi('merch-123', 'dest-2', 'test-jwt');
+
+    expect(capturedUrl).toContain('/api/v1/merchants/merch-123/destinations/dest-2');
+    expect(capturedMethod).toBe('DELETE');
+  });
 });

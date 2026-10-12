@@ -1,7 +1,12 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseServer } from '../supabase/client.js';
 import { RegistryQueryFailedError } from './errors.js';
-import { ReferenceQrRecord, TrustedRegistryDestination } from './types.js';
+import {
+  PaymentDestinationRecord,
+  ReferenceQrRecord,
+  RegistryDestinationType,
+  TrustedRegistryDestination,
+} from './types.js';
 
 interface PaymentDestinationRow {
   merchant_id: string;
@@ -481,4 +486,146 @@ export async function createReferenceQrPreviewUrl(
   } catch {
     return null;
   }
+}
+
+/**
+ * Retrieves all registered payment destinations for a specific merchant.
+ */
+export async function listDestinationsForMerchant(
+  merchantId: string,
+  client: SupabaseClient = supabaseServer,
+): Promise<PaymentDestinationRecord[]> {
+  if (!merchantId || merchantId.trim().length === 0) {
+    return [];
+  }
+
+  const { data, error } = await client
+    .from('payment_destinations')
+    .select(
+      'id, merchant_id, destination_type, destination_value, is_active, registered_at',
+    )
+    .eq('merchant_id', merchantId.trim())
+    .order('registered_at', { ascending: false });
+
+  if (error) {
+    throw new RegistryQueryFailedError(
+      `Failed to list payment destinations for merchant: ${error.message}`,
+    );
+  }
+
+  return (data as PaymentDestinationRecord[]) || [];
+}
+
+/**
+ * Creates a new payment destination record for a merchant.
+ */
+export async function createDestinationForMerchant(
+  merchantId: string,
+  payload: {
+    destinationType: RegistryDestinationType;
+    destinationValue: string;
+    isActive?: boolean;
+  },
+  client: SupabaseClient = supabaseServer,
+): Promise<PaymentDestinationRecord> {
+  const trimmedMerchantId = merchantId.trim();
+  const normalizedValue =
+    payload.destinationType === 'VPA'
+      ? payload.destinationValue.trim().toLowerCase()
+      : payload.destinationValue.trim();
+
+  const { data, error } = await client
+    .from('payment_destinations')
+    .insert({
+      merchant_id: trimmedMerchantId,
+      destination_type: payload.destinationType,
+      destination_value: normalizedValue,
+      is_active: payload.isActive ?? true,
+    })
+    .select(
+      'id, merchant_id, destination_type, destination_value, is_active, registered_at',
+    )
+    .single();
+
+  if (error || !data) {
+    throw new RegistryQueryFailedError(
+      `Failed to create payment destination: ${error?.message || 'No record returned.'}`,
+    );
+  }
+
+  return data as PaymentDestinationRecord;
+}
+
+/**
+ * Updates an existing payment destination record for a merchant.
+ */
+export async function updateDestinationForMerchant(
+  merchantId: string,
+  destinationId: string,
+  updates: {
+    destinationValue?: string;
+    isActive?: boolean;
+    destinationType?: RegistryDestinationType;
+  },
+  client: SupabaseClient = supabaseServer,
+): Promise<PaymentDestinationRecord | null> {
+  const updatePayload: Record<string, unknown> = {};
+
+  if (updates.destinationType !== undefined) {
+    updatePayload.destination_type = updates.destinationType;
+  }
+
+  if (updates.destinationValue !== undefined) {
+    const trimmed = updates.destinationValue.trim();
+    updatePayload.destination_value =
+      updates.destinationType === 'VPA' ||
+      (!updates.destinationType && trimmed.includes('@'))
+        ? trimmed.toLowerCase()
+        : trimmed;
+  }
+
+  if (updates.isActive !== undefined) {
+    updatePayload.is_active = updates.isActive;
+  }
+
+  const { data, error } = await client
+    .from('payment_destinations')
+    .update(updatePayload)
+    .eq('id', destinationId.trim())
+    .eq('merchant_id', merchantId.trim())
+    .select(
+      'id, merchant_id, destination_type, destination_value, is_active, registered_at',
+    )
+    .maybeSingle();
+
+  if (error) {
+    throw new RegistryQueryFailedError(
+      `Failed to update payment destination: ${error.message}`,
+    );
+  }
+
+  return (data as PaymentDestinationRecord) || null;
+}
+
+/**
+ * Deletes a payment destination record for a merchant.
+ */
+export async function deleteDestinationForMerchant(
+  merchantId: string,
+  destinationId: string,
+  client: SupabaseClient = supabaseServer,
+): Promise<boolean> {
+  const { error } = await client
+    .from('payment_destinations')
+    .delete()
+    .eq('id', destinationId.trim())
+    .eq('merchant_id', merchantId.trim());
+
+  if (error) {
+    throw new RegistryQueryFailedError(
+      `Failed to delete payment destination: ${error.message}`,
+    );
+  }
+
+  return true;
 }
