@@ -11,7 +11,7 @@
 
 ## 1. Project Title & Tagline
 
-**QRShield AI** — B2B Merchant QR Integrity & Payment Destination Verification SaaS.
+**QRShield AI** - B2B Merchant QR Integrity & Payment Destination Verification SaaS.
 
 QRShield provides an evidence-based verification layer designed to protect digital payment ecosystems against QR code sticker overlay tampering, malicious destination redirection, and unanchored payee substitution.
 
