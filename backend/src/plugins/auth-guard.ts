@@ -40,7 +40,8 @@ export const merchantRateLimitConfig = {
             return `merchant:${merchantId}:${tokenHash}`;
           }
         }
-        const clientIp = resolveClientIp(req, req.server.rateLimitConfig?.isRender);
+        const clientIp =
+          resolveClientIp(req, req.server.rateLimitConfig?.isRender) ?? 'unresolved';
         return `merchant:${merchantId}:${clientIp}`;
       },
     },

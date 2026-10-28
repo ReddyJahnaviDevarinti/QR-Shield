@@ -27,33 +27,49 @@ declare module 'fastify' {
 }
 
 /**
- * Resolves the effective client IP address for rate limiting.
+ * Resolves the trusted client IP address for rate limiting and request tracking.
  *
- * Security & Environment Policy:
- * - On Render (RENDER=true or isRender=true), services run behind Cloudflare/Render proxy infrastructure.
- *   The CF-Connecting-IP header is trusted ONLY under explicit Render environment configuration AND
- *   when it contains a single syntactically valid IPv4 or IPv6 address verified via Node's net.isIP().
- * - Outside the Render environment (e.g. local dev, testing, on-prem), CF-Connecting-IP is NOT trusted,
- *   preventing client header spoofing.
- * - X-Forwarded-For is NEVER trusted.
- * - Fastify trustProxy remains false (no numeric hop or arbitrary proxy trust).
- * - Safe Fallback: When CF-Connecting-IP is absent or invalid on Render, falls back to req.ip.
- *   Limitation: Under fallback on Render, requests map to the upstream proxy socket IP.
+ * Security & Environment Model:
+ * 1. Outside Render (isRender=false, e.g. local dev, CI/CD, self-hosted):
+ *    All proxy headers (CF-Connecting-IP, X-Forwarded-For) are untrusted and ignored.
+ *    Returns req.ip directly from the TCP socket to prevent client header spoofing.
+ *
+ * 2. On Render (isRender=true / RENDER=true):
+ *    Under Render's production architecture, all public HTTP traffic terminates at Render's
+ *    Cloudflare edge reverse proxies. Cloudflare sanitizes and overwrites the authoritative
+ *    'CF-Connecting-IP' header with the real visitor IP.
+ *
+ *    - CF-Connecting-IP: If present, must be a single syntactically valid IPv4 or IPv6 address (net.isIP).
+ *      Returns the validated IP string.
+ *    - X-Forwarded-For: NEVER parsed or trusted to invent a client identity. Private/public IP
+ *      classification alone cannot establish which proxy added each entry in an unverified chain,
+ *      and Cloudflare's public proxy IPs in XFF prevent reliable traversal.
+ *    - Fallback: If CF-Connecting-IP is absent or malformed on Render, returns null to signal
+ *      an unverified ingress state. Callers (such as public verification endpoints) must implement
+ *      an explicit, safe degraded response (e.g. HTTP 503) rather than guessing or silently
+ *      collapsing all clients into an unverified socket IP.
  */
 export function resolveClientIp(
   req: FastifyRequest,
   isRender: boolean = env.IS_RENDER,
-): string {
-  if (isRender) {
-    const cfConnectingIp = req.headers['cf-connecting-ip'];
-    if (typeof cfConnectingIp === 'string') {
-      const trimmed = cfConnectingIp.trim();
-      if (trimmed.length > 0 && net.isIP(trimmed) !== 0) {
-        return trimmed;
-      }
-    }
+): string | null {
+  if (!isRender) {
+    return req.ip;
   }
-  return req.ip;
+
+  const rawCf = req.headers['cf-connecting-ip'];
+  // Reject array-form headers (duplicate/multiple CF-Connecting-IP headers) as ambiguous
+  if (typeof rawCf !== 'string') {
+    return null;
+  }
+
+  const trimmed = rawCf.trim();
+  // Reject comma-separated duplicate/multiple values and validate strict IP syntax
+  if (trimmed.length > 0 && !trimmed.includes(',') && net.isIP(trimmed) !== 0) {
+    return trimmed;
+  }
+
+  return null;
 }
 
 async function securityPluginImpl(
@@ -146,7 +162,8 @@ async function securityPluginImpl(
               : `auth:${tokenHash}`;
           }
         }
-        const clientIp = resolveClientIp(req, req.server.rateLimitConfig?.isRender);
+        const clientIp =
+          resolveClientIp(req, req.server.rateLimitConfig?.isRender) ?? 'unresolved';
         return merchantId ? `merchant:${merchantId}:${clientIp}` : clientIp;
       },
     });

@@ -47,6 +47,7 @@ import {
   generateExplanation,
   type ExplanationInput,
 } from '../integrations/gemini/index.js';
+import { env } from '../config/env.js';
 import { resolveClientIp } from '../plugins/security.js';
 
 /**
@@ -155,10 +156,35 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
           timeWindow: (req: FastifyRequest) =>
             req.server.rateLimitConfig?.timeWindowMs ?? 60000,
           keyGenerator: (req: FastifyRequest) => {
-            const clientIp = resolveClientIp(req, req.server.rateLimitConfig?.isRender);
+            const clientIp =
+              resolveClientIp(req, req.server.rateLimitConfig?.isRender) ?? 'unresolved';
             return `verify:${clientIp}`;
           },
         },
+      },
+      preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
+        const isRender = request.server.rateLimitConfig?.isRender ?? env.IS_RENDER;
+        if (isRender) {
+          const clientIp = resolveClientIp(request, true);
+          if (!clientIp) {
+            request.log.warn(
+              {
+                has_cf_header: Boolean(request.headers['cf-connecting-ip']),
+                has_xff_header: Boolean(request.headers['x-forwarded-for']),
+              },
+              'Public verification request rejected: trusted CF-Connecting-IP header missing or malformed on Render',
+            );
+            return reply.status(503).send({
+              error: {
+                code: 'E_INGRESS_UNAVAILABLE',
+                message:
+                  'Service ingress configuration unavailable. Please retry shortly.',
+                details:
+                  'Client identity could not be securely established by upstream edge proxy.',
+              },
+            });
+          }
+        }
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
