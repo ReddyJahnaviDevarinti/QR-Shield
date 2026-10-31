@@ -25,6 +25,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { DataRow } from '../components/DataRow';
 import { Alert } from '../components/Alert';
 import { LoadingState } from '../components/LoadingState';
+import { CameraScanner, isCameraSupported } from '../components';
 import { verifyQr, VerifySuccessResponse, ApiClientError } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
@@ -52,10 +53,15 @@ export const VerifyPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ApiClientError | null>(null);
   const [result, setResult] = useState<VerifySuccessResponse | null>(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+
+  const cameraSupported = isCameraSupported();
 
   const handleFileSelected = async (file: File) => {
     if (isLoading) return;
 
+    // Ensure active camera scanner is closed when a file is selected
+    setIsCameraOpen(false);
     setSelectedFile(file);
     setError(null);
     setIsLoading(true);
@@ -85,6 +91,7 @@ export const VerifyPage: React.FC = () => {
   };
 
   const handleReset = () => {
+    setIsCameraOpen(false);
     setSelectedFile(null);
     setResult(null);
     setError(null);
@@ -264,39 +271,83 @@ export const VerifyPage: React.FC = () => {
                 />
               </div>
 
-              {/* Camera Capture Shell */}
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  padding: 'var(--space-3) var(--space-4)',
-                  backgroundColor: 'var(--color-surface-raised)',
-                  border: '1px solid var(--color-border-subtle)',
-                  borderRadius: 'var(--radius-md)',
-                }}
-              >
+              {/* Camera Scanner View or Shell */}
+              {isCameraOpen ? (
+                <CameraScanner
+                  onCapture={(file) => {
+                    setIsCameraOpen(false);
+                    handleFileSelected(file);
+                  }}
+                  onClose={() => setIsCameraOpen(false)}
+                  isLoading={isLoading}
+                />
+              ) : (
                 <div
-                  style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: 'var(--space-3) var(--space-4)',
+                    backgroundColor: 'var(--color-surface-raised)',
+                    border: '1px solid var(--color-border-subtle)',
+                    borderRadius: 'var(--radius-md)',
+                  }}
                 >
-                  <Camera
-                    size={18}
-                    style={{ color: 'var(--color-text-muted)' }}
-                    aria-hidden="true"
-                  />
-                  <span
+                  <div
                     style={{
-                      fontSize: '0.8125rem',
-                      color: 'var(--color-text-secondary)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)',
                     }}
                   >
-                    Device Camera Scanner
-                  </span>
+                    <Camera
+                      size={18}
+                      style={{
+                        color: cameraSupported
+                          ? 'var(--color-brand-primary)'
+                          : 'var(--color-text-muted)',
+                      }}
+                      aria-hidden="true"
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <span
+                        style={{
+                          fontSize: '0.8125rem',
+                          color: 'var(--color-text-primary)',
+                          fontWeight: 500,
+                        }}
+                      >
+                        Device Camera Scanner
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '0.6875rem',
+                          color: cameraSupported
+                            ? 'var(--color-text-muted)'
+                            : 'var(--color-status-suspicious)',
+                        }}
+                      >
+                        {cameraSupported
+                          ? 'Capture live QR code with your laptop or webcam'
+                          : 'Camera requires a secure HTTPS origin and supported browser'}
+                      </span>
+                    </div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={!cameraSupported || isLoading}
+                    onClick={() => setIsCameraOpen(true)}
+                    title={
+                      !cameraSupported
+                        ? 'Camera scanning requires a secure connection (HTTPS) and camera support'
+                        : 'Launch device camera to scan QR'
+                    }
+                  >
+                    Launch Camera
+                  </Button>
                 </div>
-                <Button variant="secondary" size="sm" disabled>
-                  Launch Camera
-                </Button>
-              </div>
+              )}
 
               <div
                 style={{

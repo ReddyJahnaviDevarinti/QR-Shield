@@ -14,3 +14,5 @@ export * from './Card';
 export * from './TextLink';
 export * from './Header';
 export * from './Footer';
+export * from './CameraScanner';
+export * from '../utils/camera';

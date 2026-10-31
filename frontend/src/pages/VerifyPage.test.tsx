@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { VerifyPage } from './VerifyPage';
 import * as apiModule from '../lib/api';
+import * as cameraUtil from '../utils/camera';
 import type { VerifySuccessResponse, CanonicalCompositeStatus } from '../lib/api';
 
 function createMockResponse(status: CanonicalCompositeStatus): VerifySuccessResponse {
@@ -248,5 +249,104 @@ describe('VerifyPage Integration Tests', () => {
     await waitFor(() => {
       expect(screen.getByText('VERIFIED')).toBeDefined();
     });
+  });
+
+  it('9. disables Launch Camera button when mediaDevices is unsupported', () => {
+    vi.spyOn(cameraUtil, 'isCameraSupported').mockReturnValue(false);
+
+    render(<VerifyPage />);
+    const launchBtn = screen.getByRole('button', { name: /Launch Camera/i });
+    expect(launchBtn).toBeDefined();
+    expect((launchBtn as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      screen.getByText(/Camera requires a secure HTTPS origin and supported browser/i),
+    ).toBeDefined();
+  });
+
+  it('10. enables Launch Camera and opens live scanner when mediaDevices is supported', async () => {
+    vi.spyOn(cameraUtil, 'isCameraSupported').mockReturnValue(true);
+    const mockTrack = { stop: vi.fn() };
+    const mockStream = {
+      id: 'stream-test',
+      getTracks: () => [mockTrack],
+    } as unknown as MediaStream;
+    vi.spyOn(cameraUtil, 'getCameraStream').mockResolvedValue(mockStream);
+
+    render(<VerifyPage />);
+    const launchBtn = screen.getByRole('button', { name: /Launch Camera/i });
+    expect((launchBtn as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(launchBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Live Camera Scanner')).toBeDefined();
+    });
+    expect(screen.getByText('LIVE')).toBeDefined();
+  });
+
+  it('11. capturing from camera sends captured file to verification API and closes camera', async () => {
+    vi.spyOn(cameraUtil, 'isCameraSupported').mockReturnValue(true);
+    const mockTrack = { stop: vi.fn() };
+    const mockStream = {
+      id: 'stream-test-2',
+      getTracks: () => [mockTrack],
+    } as unknown as MediaStream;
+    vi.spyOn(cameraUtil, 'getCameraStream').mockResolvedValue(mockStream);
+
+    const mockResponse = createMockResponse('VERIFIED');
+    const verifySpy = vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    render(<VerifyPage />);
+    const launchBtn = screen.getByRole('button', { name: /Launch Camera/i });
+    fireEvent.click(launchBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Capture & Verify')).toBeDefined();
+    });
+
+    const captureBtn = screen.getByText('Capture & Verify');
+    fireEvent.click(captureBtn);
+
+    await waitFor(() => {
+      expect(verifySpy).toHaveBeenCalledTimes(1);
+    });
+
+    const call = verifySpy.mock.calls[0];
+    expect(call).toBeDefined();
+    const passedFile = call![0] as File;
+    expect(passedFile.name).toMatch(/^camera-scan-\d+\.png$/);
+    expect(mockTrack.stop).toHaveBeenCalled();
+
+    // Camera scanner should now be closed
+    expect(screen.queryByText('Live Camera Scanner')).toBeNull();
+  });
+
+  it('12. selecting a file via dropzone closes the active camera scanner', async () => {
+    vi.spyOn(cameraUtil, 'isCameraSupported').mockReturnValue(true);
+    const mockTrack = { stop: vi.fn() };
+    const mockStream = {
+      id: 'stream-test-3',
+      getTracks: () => [mockTrack],
+    } as unknown as MediaStream;
+    vi.spyOn(cameraUtil, 'getCameraStream').mockResolvedValue(mockStream);
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(createMockResponse('VERIFIED'));
+
+    const { container } = render(<VerifyPage />);
+    const launchBtn = screen.getByRole('button', { name: /Launch Camera/i });
+    fireEvent.click(launchBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Live Camera Scanner')).toBeDefined();
+    });
+
+    // Drop file in dropzone
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-drop-bytes'], 'dropped-qr.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Live Camera Scanner')).toBeNull();
+    });
+    expect(mockTrack.stop).toHaveBeenCalled();
   });
 });

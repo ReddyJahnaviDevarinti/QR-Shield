@@ -489,36 +489,44 @@ describe('Secure Merchant Destination Routes & Tenant Isolation (Task 2)', () =>
       expect(content).not.toContain('merchant_id IS NULL');
     });
 
-    it('verifies all reference-qrs storage policies safely check folder UUID regex before casting', () => {
+    it('verifies storage.objects enforces backend-only access by removing client-facing policies and dropping legacy aliases', () => {
       const migrationPath = path.resolve(
         process.cwd(),
         '../migrations/002_destinations_and_storage_rls.sql',
       );
       const content = fs.readFileSync(migrationPath, 'utf-8');
 
-      // The safe CASE regex expression must be used in storage policies
-      const casePattern =
-        /CASE\s+WHEN\s+\(storage\.foldername\(name\)\)\[1\]\s+~\*\s+'\^\[0-9a-f]\{8\}-\[0-9a-f]\{4\}-\[0-9a-f]\{4\}-\[0-9a-f]\{4\}-\[0-9a-f]\{12}\$'/;
-      expect(casePattern.test(content)).toBe(true);
+      // Client-facing storage policies must be dropped
+      expect(content).toContain(
+        'DROP POLICY IF EXISTS "Merchants can read own reference QR storage objects" ON storage.objects;',
+      );
+      expect(content).toContain(
+        'DROP POLICY IF EXISTS "Merchants can upload own reference QR storage objects" ON storage.objects;',
+      );
+      expect(content).toContain(
+        'DROP POLICY IF EXISTS "Merchants can update own reference QR storage objects" ON storage.objects;',
+      );
+      expect(content).toContain(
+        'DROP POLICY IF EXISTS "Merchants can delete own reference QR storage objects" ON storage.objects;',
+      );
+
+      // Legacy and alias storage policies must also be dropped
+      expect(content).toContain(
+        'DROP POLICY IF EXISTS "Users can read own reference QR storage objects" ON storage.objects;',
+      );
+      expect(content).toContain(
+        'DROP POLICY IF EXISTS "reference_qrs_storage_select" ON storage.objects;',
+      );
+
+      // Must NOT contain any CREATE POLICY on storage.objects (storage is controlled via backend service-role)
+      const hasStorageCreatePolicy =
+        /CREATE\s+POLICY\s+["']?[^"'\n]+["']?\s+ON\s+storage\.objects/i.test(content);
+      expect(hasStorageCreatePolicy).toBe(false);
 
       // Raw unvalidated cast without CASE must NOT be present
       const rawUncheckedCast =
         /bucket_id\s*=\s*'reference-qrs'\s*AND\s*\(\s*\(storage\.foldername\(name\)\)\[1\]::uuid/i;
       expect(rawUncheckedCast.test(content)).toBe(false);
-
-      // Confirm all 4 storage policies exist
-      expect(content).toContain(
-        'CREATE POLICY "Merchants can read own reference QR storage objects"',
-      );
-      expect(content).toContain(
-        'CREATE POLICY "Merchants can upload own reference QR storage objects"',
-      );
-      expect(content).toContain(
-        'CREATE POLICY "Merchants can update own reference QR storage objects"',
-      );
-      expect(content).toContain(
-        'CREATE POLICY "Merchants can delete own reference QR storage objects"',
-      );
     });
   });
 });
