@@ -16,15 +16,21 @@ export { VISUAL_DEVIATION_HIGH_THRESHOLD };
 
 /**
  * Deterministically maps each canonical verification status to its factual recommendation.
+ * Context-aware: accounts for degraded physical comparison evidence where clearer image capture is needed.
  *
  * @param status - Canonical composite verification status.
+ * @param tamperResult - Optional result from physical QR tamper analyzer.
  * @returns Standardized CompositeRecommendation.
  */
 export function getRecommendationForStatus(
   status: CanonicalCompositeStatus,
+  tamperResult?: TamperAnalysisResult | null,
 ): CompositeRecommendation {
   switch (status) {
     case 'VERIFIED':
+      if (tamperResult?.analysisQuality === 'DEGRADED') {
+        return 'CAPTURE_CLEARER_IMAGE';
+      }
       return 'REVIEW_NOT_REQUIRED';
     case 'DESTINATION_MISMATCH':
       return 'DO_NOT_PROCEED_WITH_PAYMENT';
@@ -45,9 +51,10 @@ export function getRecommendationForStatus(
  * - RULE C02: No active trusted registration exists -> UNVERIFIED
  * - RULE C03: Active trusted registrations exist but destination conflicts -> DESTINATION_MISMATCH
  * - RULE C04: Destination matches but image quality is INSUFFICIENT -> INSUFFICIENT_EVIDENCE
- * - RULE C05: Destination matches, tamper analysis available, and boundary anomaly detected
- *             OR visual deviation >= high threshold -> SUSPICIOUS
- * - RULE C06: Destination matches and no high-risk visual anomaly exists -> VERIFIED
+ * - RULE C05: Destination matches and reference QR exists, but physical comparison was INCONCLUSIVE -> INSUFFICIENT_EVIDENCE
+ * - RULE C06: Destination matches, reliable physical comparison available, and boundary anomaly detected
+ *             OR visual deviation >= high threshold OR matrix structural difference -> SUSPICIOUS
+ * - RULE C07: Destination matches and no high-risk visual anomaly exists -> VERIFIED
  *
  * @param destinationResult - Result from deterministic verification engine.
  * @param imageQualityResult - Result from deterministic image quality analyzer.
@@ -79,16 +86,24 @@ export function evaluateCompositeStatus(
     return 'INSUFFICIENT_EVIDENCE';
   }
 
-  // RULE C05: Destination matched, but physical visual tamper evidence is detected
+  // RULE C05: Destination matched and reference QR exists, but physical tamper comparison was inconclusive
+  if (tamperResult && tamperResult.analysisQuality === 'INCONCLUSIVE') {
+    return 'INSUFFICIENT_EVIDENCE';
+  }
+
+  // RULE C06: Destination matched, reliable physical comparison available (COMPARABLE), and physical visual tamper evidence or structural difference is detected
   if (
     tamperResult &&
+    tamperResult.analysisQuality === 'COMPARABLE' &&
     (tamperResult.boundaryAnomalyDetected === true ||
-      tamperResult.visualDeviationIndex >= VISUAL_DEVIATION_HIGH_THRESHOLD)
+      tamperResult.visualDeviationIndex >= VISUAL_DEVIATION_HIGH_THRESHOLD ||
+      tamperResult.anomalyIndicators?.includes('MATRIX_STRUCTURAL_DIFFERENCE') === true ||
+      tamperResult.anomalyIndicators?.includes('BOUNDARY_EDGE_ANOMALY') === true)
   ) {
     return 'SUSPICIOUS';
   }
 
-  // RULE C06: Destination matched and no high-risk visual anomaly exists
+  // RULE C07: Destination matched and no high-risk visual anomaly exists
   return 'VERIFIED';
 }
 
@@ -122,13 +137,29 @@ export function aggregateRiskFactors(
     factors.push('INSUFFICIENT_DESTINATION_DATA');
   }
 
-  // 2. Tamper-layer high risk factors (prioritized over quality warnings)
-  if (tamperResult) {
-    if (tamperResult.boundaryAnomalyDetected) {
+  // 2. Tamper-layer risk factors: confidence-aware classification
+  if (tamperResult && tamperResult.analysisQuality === 'COMPARABLE') {
+    if (
+      tamperResult.boundaryAnomalyDetected ||
+      tamperResult.anomalyIndicators?.includes('BOUNDARY_EDGE_ANOMALY')
+    ) {
       factors.push('BOUNDARY_EDGE_ANOMALY');
     }
     if (tamperResult.visualDeviationIndex >= VISUAL_DEVIATION_HIGH_THRESHOLD) {
       factors.push('VISUAL_STRUCTURAL_DIFFERENCE');
+    }
+    if (tamperResult.anomalyIndicators?.includes('MATRIX_STRUCTURAL_DIFFERENCE')) {
+      factors.push('MATRIX_STRUCTURAL_DIFFERENCE');
+    }
+  } else if (tamperResult && tamperResult.analysisQuality === 'DEGRADED') {
+    factors.push('TAMPER_ANALYSIS_DEGRADED');
+    const hasStructuralDiff =
+      tamperResult.boundaryAnomalyDetected === true ||
+      tamperResult.visualDeviationIndex >= VISUAL_DEVIATION_HIGH_THRESHOLD ||
+      tamperResult.anomalyIndicators?.includes('MATRIX_STRUCTURAL_DIFFERENCE') === true ||
+      tamperResult.anomalyIndicators?.includes('BOUNDARY_EDGE_ANOMALY') === true;
+    if (hasStructuralDiff) {
+      factors.push('POTENTIAL_STRUCTURAL_DIFFERENCE');
     }
   }
 

@@ -349,4 +349,404 @@ describe('VerifyPage Integration Tests', () => {
     });
     expect(mockTrack.stop).toHaveBeenCalled();
   });
+
+  it('13. Stage 1A: renders SUSPICIOUS with MATRIX_STRUCTURAL_DIFFERENCE and manual inspection guidance', async () => {
+    const mockResponse = createMockResponse('SUSPICIOUS');
+    mockResponse.destination_match = true;
+    mockResponse.risk_factors = ['MATRIX_STRUCTURAL_DIFFERENCE'];
+    mockResponse.recommendation = 'MANUAL_INSPECTION_RECOMMENDED';
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'COMPARABLE',
+      matrix_mismatch_ratio: 0.432,
+      visual_deviation_index: 0.3271,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: ['MATRIX_STRUCTURAL_DIFFERENCE'],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'camera-capture.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('SUSPICIOUS')).toBeDefined();
+    });
+
+    // Breakdown pills
+    expect(screen.getByText('EXACT MATCH')).toBeDefined();
+    expect(screen.getByText('ANOMALY FLAGGED')).toBeDefined();
+    // Action Guidance
+    expect(
+      screen.getByText(
+        'Manual physical inspection recommended due to visual or matrix anomalies.',
+      ),
+    ).toBeDefined();
+    // Risk factors
+    expect(screen.getByText('MATRIX_STRUCTURAL_DIFFERENCE')).toBeDefined();
+  });
+
+  it('14. Stage 1A: distinguishes verified destination without reference QR (not assessed)', async () => {
+    const mockResponse = createMockResponse('VERIFIED');
+    mockResponse.composite_evidence.tamper = {
+      available: false,
+      reference_available: false,
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'no-ref-qr.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('VERIFIED')).toBeDefined();
+    });
+
+    expect(screen.getByText('NOT ASSESSED')).toBeDefined();
+    expect(
+      screen.getByText(
+        'Proceed with payment based on verified destination. Physical QR integrity was not assessed (no reference baseline available).',
+      ),
+    ).toBeDefined();
+  });
+
+  it('15. Stage 1A: confirms clean physical baseline comparison on genuine match', async () => {
+    const mockResponse = createMockResponse('VERIFIED');
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'COMPARABLE',
+      matrix_mismatch_ratio: 0.0,
+      visual_deviation_index: 0.0,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: [],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'clean-ref-qr.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('VERIFIED')).toBeDefined();
+    });
+
+    expect(screen.getByText('CLEAN BASELINE')).toBeDefined();
+    expect(
+      screen.getByText(
+        'Proceed with payment. Destination parity verified and physical baseline comparison is clean.',
+      ),
+    ).toBeDefined();
+  });
+
+  it('16. Stage 1A.1: renders INCONCLUSIVE physical comparison and appropriate guidance', async () => {
+    const mockResponse = createMockResponse('INSUFFICIENT_EVIDENCE');
+    mockResponse.destination_match = true;
+    mockResponse.recommendation = 'CAPTURE_CLEARER_IMAGE';
+    mockResponse.risk_factors = ['TAMPER_ANALYSIS_INCONCLUSIVE'];
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'INCONCLUSIVE',
+      alignment_quality: 0.25,
+      alignment_classification: 'INSUFFICIENT',
+      matrix_mismatch_ratio: 0.15,
+      visual_deviation_index: 0.1,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: ['ALIGNMENT_INSUFFICIENT', 'LOW_COMPARABILITY'],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'inconclusive-qr.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('INSUFFICIENT EVIDENCE')).toBeDefined();
+    });
+
+    // Breakdown pills
+    expect(screen.getByText('EXACT MATCH')).toBeDefined();
+    expect(screen.getByText('INCONCLUSIVE')).toBeDefined();
+
+    // Guidance text
+    expect(
+      screen.getByText(
+        'Physical comparison could not be completed reliably. Capture a clearer, well-aligned QR image. No conclusion about physical tampering can be made.',
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText(/No visual or destination anomalies detected/i)).toBeNull();
+
+    // Card D alignment comparability indicators
+    expect(screen.getByText(/Alignment \/ Comparability Indicators:/i)).toBeDefined();
+    expect(
+      screen.getByText(/INCONCLUSIVE: insufficient geometric alignment for comparison/i),
+    ).toBeDefined();
+  });
+
+  it('17. Stage 1A.2: renders DEGRADED physical comparison with consistent backend recommendation', async () => {
+    const mockResponse = createMockResponse('VERIFIED');
+    mockResponse.destination_match = true;
+    mockResponse.recommendation = 'CAPTURE_CLEARER_IMAGE';
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'DEGRADED',
+      alignment_quality: 0.55,
+      alignment_classification: 'DEGRADED',
+      matrix_mismatch_ratio: 0.05,
+      visual_deviation_index: 0.06,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: ['ALIGNMENT_DEGRADED'],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'degraded-qr.png', { type: 'image/png' });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('VERIFIED')).toBeDefined();
+    });
+
+    // Physical Integrity must clearly disclose degraded / limited confidence
+    expect(screen.getByText('DEGRADED (LIMITED CONFIDENCE)')).toBeDefined();
+    expect(screen.queryByText('CLEAN BASELINE')).toBeNull();
+
+    // Guidance text matches backend CAPTURE_CLEARER_IMAGE recommendation
+    expect(
+      screen.getByText(
+        'Capture a clearer, well-aligned photograph. Physical comparison had degraded alignment with limited confidence.',
+      ),
+    ).toBeDefined();
+  });
+
+  it('18. Stage 1A.2: handles missing analysis_quality safely (STATUS UNAVAILABLE, never CLEAN BASELINE)', async () => {
+    const mockResponse = createMockResponse('VERIFIED');
+    mockResponse.destination_match = true;
+    mockResponse.recommendation = 'REVIEW_NOT_REQUIRED';
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      // analysis_quality is omitted / undefined
+      matrix_mismatch_ratio: 0.0,
+      visual_deviation_index: 0.0,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: [],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'missing-quality-qr.png', {
+      type: 'image/png',
+    });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('VERIFIED')).toBeDefined();
+    });
+
+    // Must NOT display CLEAN BASELINE
+    expect(screen.queryByText('CLEAN BASELINE')).toBeNull();
+    // Must display STATUS UNAVAILABLE
+    expect(screen.getByText('STATUS UNAVAILABLE')).toBeDefined();
+
+    // Truthful guidance requesting a fresh verification
+    expect(
+      screen.getByText(
+        'Physical comparison status unavailable. Please capture a fresh verification image. Physical QR integrity could not be verified.',
+      ),
+    ).toBeDefined();
+    // Card D detail row
+    expect(
+      screen.getByText('STATUS UNAVAILABLE: comparison quality undetermined.'),
+    ).toBeDefined();
+  });
+
+  it('19. Stage 1A.2: handles unrecognised/unknown analysis_quality safely', async () => {
+    const mockResponse = createMockResponse('VERIFIED');
+    mockResponse.destination_match = true;
+    mockResponse.recommendation = 'REVIEW_NOT_REQUIRED';
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'UNEXPECTED_QUALITY_VALUE' as unknown as 'COMPARABLE',
+      matrix_mismatch_ratio: 0.0,
+      visual_deviation_index: 0.0,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: [],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'unknown-quality-qr.png', {
+      type: 'image/png',
+    });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('VERIFIED')).toBeDefined();
+    });
+
+    // Must NOT display CLEAN BASELINE
+    expect(screen.queryByText('CLEAN BASELINE')).toBeNull();
+    // Must display STATUS UNAVAILABLE
+    expect(screen.getByText('STATUS UNAVAILABLE')).toBeDefined();
+
+    // Truthful guidance requesting a fresh verification
+    expect(
+      screen.getByText(
+        'Physical comparison status unavailable. Please capture a fresh verification image. Physical QR integrity could not be verified.',
+      ),
+    ).toBeDefined();
+  });
+
+  it('20. Stage 1A.3: renders DEGRADED comparison with structural difference as POTENTIAL DIFFERENCE (LIMITED CONFIDENCE)', async () => {
+    const mockResponse = createMockResponse('VERIFIED');
+    mockResponse.destination_match = true;
+    mockResponse.recommendation = 'CAPTURE_CLEARER_IMAGE';
+    mockResponse.risk_factors = [
+      'TAMPER_ANALYSIS_DEGRADED',
+      'POTENTIAL_STRUCTURAL_DIFFERENCE',
+    ];
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'DEGRADED',
+      alignment_quality: 0.55,
+      alignment_classification: 'DEGRADED',
+      matrix_mismatch_ratio: 0.432,
+      visual_deviation_index: 0.32,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: ['ALIGNMENT_DEGRADED', 'MATRIX_STRUCTURAL_DIFFERENCE'],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'degraded-anomaly-qr.png', {
+      type: 'image/png',
+    });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('VERIFIED')).toBeDefined();
+    });
+
+    // Badge MUST be POTENTIAL DIFFERENCE (LIMITED CONFIDENCE), NEVER ANOMALY FLAGGED or CLEAN BASELINE
+    expect(screen.getByText('POTENTIAL DIFFERENCE (LIMITED CONFIDENCE)')).toBeDefined();
+    expect(screen.queryByText('ANOMALY FLAGGED')).toBeNull();
+    expect(screen.queryByText('CLEAN BASELINE')).toBeNull();
+
+    // Guidance text must clearly state potential difference with limited alignment confidence
+    expect(
+      screen.getByText(
+        'Capture a clearer, well-aligned photograph. Comparison showed potential difference with limited alignment confidence.',
+      ),
+    ).toBeDefined();
+
+    // Indicators section must label as potential comparison indicators, not confirmed tamper indicators
+    expect(
+      screen.getByText(/Potential Comparison Indicators \(Limited Confidence\):/i),
+    ).toBeDefined();
+    expect(screen.queryByText(/^Tamper Indicators:/i)).toBeNull();
+  });
+
+  it('21. Stage 1A.3: renders COMPARABLE comparison with structural anomaly as ANOMALY FLAGGED', async () => {
+    const mockResponse = createMockResponse('SUSPICIOUS');
+    mockResponse.destination_match = true;
+    mockResponse.recommendation = 'MANUAL_INSPECTION_RECOMMENDED';
+    mockResponse.risk_factors = ['MATRIX_STRUCTURAL_DIFFERENCE'];
+    mockResponse.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'COMPARABLE',
+      alignment_quality: 0.92,
+      alignment_classification: 'GOOD',
+      matrix_mismatch_ratio: 0.432,
+      visual_deviation_index: 0.32,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: ['MATRIX_STRUCTURAL_DIFFERENCE'],
+    };
+    vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(mockResponse);
+
+    const { container } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['fake-bytes'], 'comparable-tamper-qr.png', {
+      type: 'image/png',
+    });
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('SUSPICIOUS')).toBeDefined();
+    });
+
+    // Badge MUST be ANOMALY FLAGGED
+    expect(screen.getByText('ANOMALY FLAGGED')).toBeDefined();
+    expect(screen.queryByText('CLEAN BASELINE')).toBeNull();
+
+    // Guidance text
+    expect(
+      screen.getByText(
+        'Manual physical inspection recommended due to visual or matrix anomalies.',
+      ),
+    ).toBeDefined();
+
+    // Indicators section
+    expect(screen.getByText(/^Tamper Indicators:/i)).toBeDefined();
+  });
+
+  it('22. Stage 1A.3: verifies all 7 physical integrity states', async () => {
+    // 1. NOT ASSESSED: tamper.available === false
+    const notAssessedResp = createMockResponse('VERIFIED');
+    notAssessedResp.composite_evidence.tamper = { available: false };
+    const spy = vi.spyOn(apiModule, 'verifyQr').mockResolvedValue(notAssessedResp);
+
+    const { container, unmount } = render(<VerifyPage />);
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(['b'], 'test.png', { type: 'image/png' })] },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('NOT ASSESSED')).toBeDefined();
+    });
+    unmount();
+
+    // 2. CLEAN BASELINE: COMPARABLE + clean
+    const cleanResp = createMockResponse('VERIFIED');
+    cleanResp.composite_evidence.tamper = {
+      available: true,
+      reference_available: true,
+      analysis_quality: 'COMPARABLE',
+      alignment_quality: 0.95,
+      alignment_classification: 'GOOD',
+      matrix_mismatch_ratio: 0.0,
+      visual_deviation_index: 0.0,
+      boundary_anomaly_detected: false,
+      anomaly_indicators: [],
+    };
+    spy.mockResolvedValue(cleanResp);
+    const { container: c2, unmount: u2 } = render(<VerifyPage />);
+    fireEvent.change(c2.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File(['b'], 'test.png', { type: 'image/png' })] },
+    });
+    await waitFor(() => {
+      expect(screen.getByText('CLEAN BASELINE')).toBeDefined();
+    });
+    expect(
+      screen.getByText(
+        'Proceed with payment. Destination parity verified and physical baseline comparison is clean.',
+      ),
+    ).toBeDefined();
+    u2();
+  });
 });

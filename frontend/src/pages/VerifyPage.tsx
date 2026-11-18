@@ -26,13 +26,82 @@ import { DataRow } from '../components/DataRow';
 import { Alert } from '../components/Alert';
 import { LoadingState } from '../components/LoadingState';
 import { CameraScanner, isCameraSupported } from '../components';
-import { verifyQr, VerifySuccessResponse, ApiClientError } from '../lib/api';
+import {
+  verifyQr,
+  VerifySuccessResponse,
+  ApiClientError,
+  CompositeRecommendation,
+} from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 
-function formatRecommendation(rec: string): string {
+function getPhysicalIntegrityBadge(
+  tamper?: VerifySuccessResponse['composite_evidence']['tamper'] | null,
+): { label: string; color: string } {
+  if (!tamper || !tamper.available) {
+    return { label: 'NOT ASSESSED', color: 'var(--color-text-muted)' };
+  }
+  if (tamper.analysis_quality === 'INCONCLUSIVE') {
+    return { label: 'INCONCLUSIVE', color: 'var(--color-status-insufficient)' };
+  }
+
+  // If analysis_quality is missing, null, or unrecognised, do NOT display CLEAN BASELINE
+  if (
+    !tamper.analysis_quality ||
+    (tamper.analysis_quality !== 'COMPARABLE' && tamper.analysis_quality !== 'DEGRADED')
+  ) {
+    return { label: 'STATUS UNAVAILABLE', color: 'var(--color-status-unverified)' };
+  }
+
+  const hasStructuralAnomaly =
+    tamper.boundary_anomaly_detected === true ||
+    (tamper.anomaly_indicators &&
+      tamper.anomaly_indicators.some(
+        (i) => i === 'MATRIX_STRUCTURAL_DIFFERENCE' || i === 'BOUNDARY_EDGE_ANOMALY',
+      )) ||
+    (tamper.visual_deviation_index ?? 0) >= 0.35;
+
+  if (tamper.analysis_quality === 'COMPARABLE') {
+    if (hasStructuralAnomaly) {
+      return { label: 'ANOMALY FLAGGED', color: 'var(--color-status-suspicious)' };
+    }
+    return { label: 'CLEAN BASELINE', color: 'var(--color-status-verified)' };
+  }
+
+  // tamper.analysis_quality === 'DEGRADED'
+  if (hasStructuralAnomaly) {
+    return {
+      label: 'POTENTIAL DIFFERENCE (LIMITED CONFIDENCE)',
+      color: 'var(--color-status-suspicious)',
+    };
+  }
+
+  return {
+    label: 'DEGRADED (LIMITED CONFIDENCE)',
+    color: 'var(--color-status-suspicious)',
+  };
+}
+
+function formatRecommendation(
+  rec: CompositeRecommendation,
+  tamper?: VerifySuccessResponse['composite_evidence']['tamper'] | null,
+): string {
   switch (rec) {
     case 'REVIEW_NOT_REQUIRED':
-      return 'Proceed with payment. No visual or destination anomalies detected.';
+      if (tamper?.available) {
+        // If physical comparison is available, but analysis_quality is missing, null, or unrecognised
+        if (
+          !tamper.analysis_quality ||
+          (tamper.analysis_quality !== 'COMPARABLE' &&
+            tamper.analysis_quality !== 'DEGRADED')
+        ) {
+          return 'Physical comparison status unavailable. Please capture a fresh verification image. Physical QR integrity could not be verified.';
+        }
+        if (tamper.analysis_quality === 'DEGRADED') {
+          return 'Proceed with caution based on verified destination. Physical comparison confidence was limited.';
+        }
+        return 'Proceed with payment. Destination parity verified and physical baseline comparison is clean.';
+      }
+      return 'Proceed with payment based on verified destination. Physical QR integrity was not assessed (no reference baseline available).';
     case 'DO_NOT_PROCEED_WITH_PAYMENT':
       return 'Do not proceed with payment. The scanned destination conflicts with the registered payee.';
     case 'VERIFY_MERCHANT_BEFORE_PAYMENT':
@@ -40,6 +109,23 @@ function formatRecommendation(rec: string): string {
     case 'MANUAL_INSPECTION_RECOMMENDED':
       return 'Manual physical inspection recommended due to visual or matrix anomalies.';
     case 'CAPTURE_CLEARER_IMAGE':
+      if (tamper?.available && tamper.analysis_quality === 'DEGRADED') {
+        const hasStructuralDiff =
+          tamper.boundary_anomaly_detected === true ||
+          (tamper.anomaly_indicators &&
+            tamper.anomaly_indicators.some(
+              (i) =>
+                i === 'MATRIX_STRUCTURAL_DIFFERENCE' || i === 'BOUNDARY_EDGE_ANOMALY',
+            )) ||
+          (tamper.visual_deviation_index ?? 0) >= 0.35;
+        if (hasStructuralDiff) {
+          return 'Capture a clearer, well-aligned photograph. Comparison showed potential difference with limited alignment confidence.';
+        }
+        return 'Capture a clearer, well-aligned photograph. Physical comparison had degraded alignment with limited confidence.';
+      }
+      if (tamper?.available && tamper.analysis_quality === 'INCONCLUSIVE') {
+        return 'Physical comparison could not be completed reliably. Capture a clearer, well-aligned QR image. No conclusion about physical tampering can be made.';
+      }
       return 'Capture a clearer, higher-resolution photograph with good lighting and contrast.';
     default:
       return rec;
@@ -433,6 +519,106 @@ export const VerifyPage: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Multi-layer verification breakdown */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                    gap: 'var(--space-2)',
+                    fontSize: '0.75rem',
+                    fontFamily: 'var(--font-mono)',
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: 'var(--space-2)',
+                      backgroundColor: 'var(--color-surface-raised)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-border-subtle)',
+                    }}
+                  >
+                    <div
+                      style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}
+                    >
+                      DESTINATION
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        color: result.destination_match
+                          ? 'var(--color-status-verified)'
+                          : result.registered_destination
+                            ? 'var(--color-status-mismatch)'
+                            : 'var(--color-status-unverified)',
+                      }}
+                    >
+                      {result.destination_match
+                        ? 'EXACT MATCH'
+                        : result.registered_destination
+                          ? 'CONFLICT'
+                          : 'UNREGISTERED'}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 'var(--space-2)',
+                      backgroundColor: 'var(--color-surface-raised)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-border-subtle)',
+                    }}
+                  >
+                    <div
+                      style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}
+                    >
+                      IMAGE QUALITY
+                    </div>
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        color:
+                          result.image_quality.overall_quality === 'ACCEPTABLE'
+                            ? 'var(--color-status-verified)'
+                            : result.image_quality.overall_quality === 'DEGRADED'
+                              ? 'var(--color-status-suspicious)'
+                              : 'var(--color-status-insufficient)',
+                      }}
+                    >
+                      {result.image_quality.overall_quality}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      padding: 'var(--space-2)',
+                      backgroundColor: 'var(--color-surface-raised)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--color-border-subtle)',
+                    }}
+                  >
+                    <div
+                      style={{ color: 'var(--color-text-muted)', fontSize: '0.6875rem' }}
+                    >
+                      PHYSICAL INTEGRITY
+                    </div>
+                    {(() => {
+                      const badge = getPhysicalIntegrityBadge(
+                        result.composite_evidence.tamper,
+                      );
+                      return (
+                        <div
+                          style={{
+                            fontWeight: 600,
+                            color: badge.color,
+                          }}
+                        >
+                          {badge.label}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
                 <div
                   style={{
                     padding: 'var(--space-3) var(--space-4)',
@@ -447,7 +633,10 @@ export const VerifyPage: React.FC = () => {
                   <strong style={{ color: 'var(--color-text-primary)' }}>
                     Action Guidance:{' '}
                   </strong>
-                  {formatRecommendation(result.recommendation)}
+                  {formatRecommendation(
+                    result.recommendation,
+                    result.composite_evidence.tamper,
+                  )}
                 </div>
 
                 <div
@@ -691,7 +880,15 @@ export const VerifyPage: React.FC = () => {
                   label="Physical Comparison"
                   value={
                     result.composite_evidence.tamper.available
-                      ? 'AVAILABLE'
+                      ? result.composite_evidence.tamper.analysis_quality ===
+                        'INCONCLUSIVE'
+                        ? 'INCONCLUSIVE: insufficient geometric alignment for comparison.'
+                        : result.composite_evidence.tamper.analysis_quality === 'DEGRADED'
+                          ? 'DEGRADED: limited alignment confidence.'
+                          : result.composite_evidence.tamper.analysis_quality ===
+                              'COMPARABLE'
+                            ? 'AVAILABLE'
+                            : 'STATUS UNAVAILABLE: comparison quality undetermined.'
                       : result.composite_evidence.tamper.reference_available === false
                         ? 'NOT AVAILABLE: merchant has no registered reference QR.'
                         : 'NOT AVAILABLE: scan conducted without registered reference QR.'
@@ -748,10 +945,20 @@ export const VerifyPage: React.FC = () => {
                             marginTop: 'var(--space-2)',
                             fontSize: '0.6875rem',
                             fontFamily: 'var(--font-mono)',
-                            color: 'var(--color-status-suspicious)',
+                            color:
+                              result.composite_evidence.tamper.analysis_quality ===
+                              'INCONCLUSIVE'
+                                ? 'var(--color-status-insufficient)'
+                                : 'var(--color-status-suspicious)',
                           }}
                         >
-                          Tamper Indicators:{' '}
+                          {result.composite_evidence.tamper.analysis_quality ===
+                          'INCONCLUSIVE'
+                            ? 'Alignment / Comparability Indicators: '
+                            : result.composite_evidence.tamper.analysis_quality ===
+                                'DEGRADED'
+                              ? 'Potential Comparison Indicators (Limited Confidence): '
+                              : 'Tamper Indicators: '}
                           {result.composite_evidence.tamper.anomaly_indicators.join(', ')}
                         </div>
                       )}

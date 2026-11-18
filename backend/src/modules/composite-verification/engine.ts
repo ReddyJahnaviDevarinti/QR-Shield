@@ -57,8 +57,8 @@ export function composeVerificationResult(
   // 2. Aggregate machine-readable risk factors
   const riskFactors = aggregateRiskFactors(destination, imageQuality, tamper);
 
-  // 3. Formulate factual diagnostic recommendation
-  const recommendation = getRecommendationForStatus(status);
+  // 3. Formulate factual diagnostic recommendation (context-aware of physical comparison comparability)
+  const recommendation = getRecommendationForStatus(status, tamper);
 
   // 4. Construct consolidated evidence object (without mutating inputs)
   const evidence: CompositeEvidence = {

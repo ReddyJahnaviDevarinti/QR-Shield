@@ -19,8 +19,11 @@ export type CompositeRiskFactor =
   | 'IMAGE_QUALITY_INSUFFICIENT'
   | 'IMAGE_QUALITY_DEGRADED'
   | 'VISUAL_STRUCTURAL_DIFFERENCE'
+  | 'MATRIX_STRUCTURAL_DIFFERENCE'
   | 'BOUNDARY_EDGE_ANOMALY'
   | 'TAMPER_ANALYSIS_INCONCLUSIVE'
+  | 'TAMPER_ANALYSIS_DEGRADED'
+  | 'POTENTIAL_STRUCTURAL_DIFFERENCE'
   | 'INSUFFICIENT_DESTINATION_DATA'
   | 'NO_PAYMENT_DESTINATION';
 
@@ -76,6 +79,7 @@ export interface VerifySuccessResponse {
     tamper: {
       available: boolean;
       reference_available?: boolean;
+      analysis_quality?: 'COMPARABLE' | 'DEGRADED' | 'INCONCLUSIVE' | null;
       visual_deviation_index?: number | null;
       alignment_quality?: number | null;
       alignment_classification?: string | null;

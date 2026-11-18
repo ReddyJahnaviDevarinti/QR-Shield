@@ -548,7 +548,7 @@ export async function verifyRoutes(app: FastifyInstance): Promise<void> {
               reference_available: referenceRecord !== null,
               ...(tamperResult
                 ? {
-                    analysis_quality: tamperResult.analysisQuality,
+                    analysis_quality: tamperResult.analysisQuality ?? null,
                     visual_deviation_index: tamperResult.visualDeviationIndex,
                     alignment_quality: tamperResult.alignmentQuality,
                     alignment_classification: tamperResult.alignmentClassification,

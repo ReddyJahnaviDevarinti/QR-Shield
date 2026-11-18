@@ -142,7 +142,7 @@ describe('QRShield Composite Verification Engine', () => {
     expect(result.recommendation).toBe('MANUAL_INSPECTION_RECOMMENDED');
   });
 
-  it('6. Matching destination + tamper analysis inconclusive -> VERIFIED when image quality is sufficient', () => {
+  it('6. Matching destination + tamper analysis inconclusive -> INSUFFICIENT_EVIDENCE when physical comparison is inconclusive', () => {
     const dest = createMockDestinationResult();
     const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
     const tamper = createMockTamperResult({
@@ -156,9 +156,10 @@ describe('QRShield Composite Verification Engine', () => {
 
     const result = composeVerificationResult(dest, quality, tamper);
 
-    expect(result.status).toBe('VERIFIED');
+    expect(result.status).toBe('INSUFFICIENT_EVIDENCE');
+    expect(result.destinationMatch).toBe(true);
     expect(result.riskFactors).toContain('TAMPER_ANALYSIS_INCONCLUSIVE');
-    expect(result.recommendation).toBe('REVIEW_NOT_REQUIRED');
+    expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
   });
 
   it('7. Matching destination + no tamper analysis available -> VERIFIED when image quality is sufficient', () => {
@@ -635,7 +636,7 @@ describe('QRShield Composite Verification Engine', () => {
       expect(result.status).toBe('VERIFIED');
     });
 
-    it('Matrix G: Destination match + good image + tamper inconclusive -> VERIFIED', () => {
+    it('Matrix G: Destination match + good image + tamper inconclusive -> INSUFFICIENT_EVIDENCE', () => {
       const dest = createMockDestinationResult({ status: 'VERIFIED' });
       const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
       const tamper = createMockTamperResult({
@@ -645,7 +646,9 @@ describe('QRShield Composite Verification Engine', () => {
       });
 
       const result = composeVerificationResult(dest, quality, tamper);
-      expect(result.status).toBe('VERIFIED');
+      expect(result.status).toBe('INSUFFICIENT_EVIDENCE');
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      expect(result.destinationMatch).toBe(true);
     });
 
     it('Matrix H: Destination match + degraded image + no visual anomaly -> VERIFIED', () => {
@@ -700,6 +703,472 @@ describe('QRShield Composite Verification Engine', () => {
       const result = composeVerificationResult(dest, quality, tamper);
       expect(result.status).toBe('SUSPICIOUS');
       expect(result.riskFactors).toContain('VISUAL_STRUCTURAL_DIFFERENCE');
+    });
+  });
+
+  // Stage 1A & 1A.1: Regression Tests for Physical Integrity and Inconclusive Analysis (Tests A-F)
+  describe('Stage 1A & 1A.1: Physical Integrity and Inconclusive Handling (Tests A-F)', () => {
+    it('Test A: Destination exact match + reference available + INCONCLUSIVE analysis -> INSUFFICIENT_EVIDENCE & CAPTURE_CLEARER_IMAGE', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+        scannedDestination: '7702477304@sbi',
+        matchedDestination: '7702477304@sbi',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'INCONCLUSIVE',
+        alignmentClassification: 'INSUFFICIENT',
+        alignmentQuality: 0.25,
+        matrixMismatchRatio: 0.15,
+        visualDeviationIndex: 0.12,
+        boundaryAnomalyDetected: false,
+        boundaryAnomalyScore: 0.05,
+        anomalyIndicators: ['ALIGNMENT_INSUFFICIENT', 'LOW_COMPARABILITY'],
+        recommendation: 'INSUFFICIENT_VISUAL_EVIDENCE',
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      // Must be classified as INSUFFICIENT_EVIDENCE due to inconclusive physical comparison
+      expect(result.status).toBe('INSUFFICIENT_EVIDENCE');
+      // Destination parity is independently preserved
+      expect(result.destinationMatch).toBe(true);
+      expect(result.scannedDestination).toBe('7702477304@sbi');
+      expect(result.matchedDestination).toBe('7702477304@sbi');
+      // Risk factors must include TAMPER_ANALYSIS_INCONCLUSIVE
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_INCONCLUSIVE');
+      // Must NOT allege physical tampering or structural difference
+      expect(result.riskFactors).not.toContain('MATRIX_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('VISUAL_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('BOUNDARY_EDGE_ANOMALY');
+      // Must recommend capturing a clearer image
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      // Evidence preserves inconclusive analysis quality
+      expect(result.tamperAnalysisAvailable).toBe(true);
+      expect(result.evidence.tamper?.analysisQuality).toBe('INCONCLUSIVE');
+    });
+
+    it('Test B: Destination mismatch + INCONCLUSIVE physical analysis -> DESTINATION_MISMATCH retains precedence', () => {
+      const dest = createMockDestinationResult({
+        status: 'DESTINATION_MISMATCH',
+        destinationMatch: false,
+        scannedDestination: 'attacker@upi',
+        matchedDestination: null,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'INCONCLUSIVE',
+        alignmentClassification: 'INSUFFICIENT',
+        alignmentQuality: 0.2,
+        anomalyIndicators: ['ALIGNMENT_INSUFFICIENT', 'LOW_COMPARABILITY'],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      // Destination conflict must take precedence over inconclusive physical comparison
+      expect(result.status).toBe('DESTINATION_MISMATCH');
+      expect(result.recommendation).toBe('DO_NOT_PROCEED_WITH_PAYMENT');
+      expect(result.destinationMatch).toBe(false);
+      expect(result.riskFactors).toContain('DESTINATION_CONFLICT');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_INCONCLUSIVE');
+    });
+
+    it('Test C: No reference QR available -> VERIFIED destination with physical comparison NOT ASSESSED', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+        scannedDestination: '7702477304@sbi',
+        matchedDestination: '7702477304@sbi',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+
+      // No reference QR exists in registry
+      const result = composeVerificationResult(dest, quality, null);
+
+      expect(result.status).toBe('VERIFIED');
+      expect(result.recommendation).toBe('REVIEW_NOT_REQUIRED');
+      expect(result.destinationMatch).toBe(true);
+      expect(result.tamperAnalysisAvailable).toBe(false);
+      expect(result.evidence.tamper).toBeNull();
+      expect(result.riskFactors).toHaveLength(0);
+    });
+
+    it('Test D: Comparable physical baseline with no anomalies -> VERIFIED & REVIEW_NOT_REQUIRED', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+        scannedDestination: '7702477304@sbi',
+        matchedDestination: '7702477304@sbi',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'COMPARABLE',
+        alignmentClassification: 'GOOD',
+        alignmentQuality: 0.95,
+        matrixMismatchRatio: 0.0,
+        visualDeviationIndex: 0.0,
+        boundaryAnomalyDetected: false,
+        boundaryAnomalyScore: 0.0,
+        anomalyIndicators: [],
+        recommendation: 'NO_SIGNIFICANT_VISUAL_DEVIATION',
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('VERIFIED');
+      expect(result.recommendation).toBe('REVIEW_NOT_REQUIRED');
+      expect(result.destinationMatch).toBe(true);
+      expect(result.tamperAnalysisAvailable).toBe(true);
+      expect(result.evidence.tamper?.analysisQuality).toBe('COMPARABLE');
+      expect(result.riskFactors).toHaveLength(0);
+    });
+
+    it('Test E: Comparable physical baseline with MATRIX_STRUCTURAL_DIFFERENCE -> SUSPICIOUS & MANUAL_INSPECTION_RECOMMENDED', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+        scannedDestination: '7702477304@sbi',
+        matchedDestination: '7702477304@sbi',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'COMPARABLE',
+        alignmentClassification: 'GOOD',
+        alignmentQuality: 0.88,
+        matrixMismatchRatio: 0.432,
+        visualDeviationIndex: 0.3271, // < 0.35 threshold
+        boundaryAnomalyDetected: false,
+        boundaryAnomalyScore: 0.05,
+        anomalyIndicators: ['MATRIX_STRUCTURAL_DIFFERENCE'],
+        recommendation: 'REVIEW_VISUAL_DIFFERENCE',
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('SUSPICIOUS');
+      expect(result.recommendation).toBe('MANUAL_INSPECTION_RECOMMENDED');
+      expect(result.destinationMatch).toBe(true);
+      expect(result.riskFactors).toContain('MATRIX_STRUCTURAL_DIFFERENCE');
+      expect(result.tamperAnalysisAvailable).toBe(true);
+    });
+
+    it('Test F: Degraded physical comparison -> VERIFIED with degraded physical evidence and no false tamper claims', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+        scannedDestination: '7702477304@sbi',
+        matchedDestination: '7702477304@sbi',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'DEGRADED',
+        alignmentClassification: 'DEGRADED',
+        alignmentQuality: 0.55,
+        matrixMismatchRatio: 0.05,
+        visualDeviationIndex: 0.08,
+        boundaryAnomalyDetected: false,
+        boundaryAnomalyScore: 0.02,
+        anomalyIndicators: ['ALIGNMENT_DEGRADED'],
+        recommendation: 'NO_SIGNIFICANT_VISUAL_DEVIATION',
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      // Status remains VERIFIED because there are no physical anomalies and analysis was not inconclusive
+      expect(result.status).toBe('VERIFIED');
+      expect(result.destinationMatch).toBe(true);
+      // Stage 1A.2: Recommendation is context-aware CAPTURE_CLEARER_IMAGE, not REVIEW_NOT_REQUIRED
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      expect(result.tamperAnalysisAvailable).toBe(true);
+      expect(result.evidence.tamper?.analysisQuality).toBe('DEGRADED');
+      // Must not falsely claim structural difference or inconclusive failure
+      expect(result.riskFactors).not.toContain('MATRIX_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('TAMPER_ANALYSIS_INCONCLUSIVE');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_DEGRADED');
+      expect(result.riskFactors).not.toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+    });
+  });
+
+  // Stage 1A.2: Backend Recommendation Consistency and Precedence (Tests A-C)
+  describe('Stage 1A.2: Backend Recommendation Consistency (Tests A-C)', () => {
+    it('Test A: Destination exact match + DEGRADED physical comparison -> VERIFIED status with CAPTURE_CLEARER_IMAGE recommendation', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+        scannedDestination: '7702477304@sbi',
+        matchedDestination: '7702477304@sbi',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'DEGRADED',
+        alignmentClassification: 'DEGRADED',
+        alignmentQuality: 0.52,
+        matrixMismatchRatio: 0.04,
+        visualDeviationIndex: 0.07,
+        boundaryAnomalyDetected: false,
+        boundaryAnomalyScore: 0.01,
+        anomalyIndicators: ['ALIGNMENT_DEGRADED'],
+        recommendation: 'NO_SIGNIFICANT_VISUAL_DEVIATION',
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      // 1. Canonical status remains VERIFIED
+      expect(result.status).toBe('VERIFIED');
+      // 2. Recommendation is context-aware CAPTURE_CLEARER_IMAGE (NOT REVIEW_NOT_REQUIRED)
+      expect(result.recommendation).not.toBe('REVIEW_NOT_REQUIRED');
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      // 3. Destination fields and match are preserved
+      expect(result.destinationMatch).toBe(true);
+      expect(result.scannedDestination).toBe('7702477304@sbi');
+      expect(result.matchedDestination).toBe('7702477304@sbi');
+      // 4. Physical comparison evidence preserved
+      expect(result.tamperAnalysisAvailable).toBe(true);
+      expect(result.evidence.tamper?.analysisQuality).toBe('DEGRADED');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_DEGRADED');
+      expect(result.riskFactors).not.toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+    });
+
+    it('Test B: Destination exact match + COMPARABLE clean physical comparison -> VERIFIED & REVIEW_NOT_REQUIRED with no risk factors', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+        scannedDestination: '7702477304@sbi',
+        matchedDestination: '7702477304@sbi',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'COMPARABLE',
+        alignmentClassification: 'GOOD',
+        alignmentQuality: 0.95,
+        matrixMismatchRatio: 0.0,
+        visualDeviationIndex: 0.0,
+        boundaryAnomalyDetected: false,
+        boundaryAnomalyScore: 0.0,
+        anomalyIndicators: [],
+        recommendation: 'NO_SIGNIFICANT_VISUAL_DEVIATION',
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('VERIFIED');
+      expect(result.recommendation).toBe('REVIEW_NOT_REQUIRED');
+      expect(result.destinationMatch).toBe(true);
+      expect(result.riskFactors).toHaveLength(0);
+      expect(result.evidence.tamper?.analysisQuality).toBe('COMPARABLE');
+    });
+
+    it('Test C: Destination mismatch + DEGRADED physical comparison -> DESTINATION_MISMATCH & DO_NOT_PROCEED_WITH_PAYMENT (precedence preserved)', () => {
+      const dest = createMockDestinationResult({
+        status: 'DESTINATION_MISMATCH',
+        destinationMatch: false,
+        scannedDestination: 'attacker@upi',
+        matchedDestination: null,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'DEGRADED',
+        alignmentClassification: 'DEGRADED',
+        alignmentQuality: 0.5,
+        anomalyIndicators: ['ALIGNMENT_DEGRADED'],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      // Destination mismatch retains top precedence over degraded physical comparison
+      expect(result.status).toBe('DESTINATION_MISMATCH');
+      expect(result.recommendation).toBe('DO_NOT_PROCEED_WITH_PAYMENT');
+      expect(result.destinationMatch).toBe(false);
+      expect(result.riskFactors).toContain('DESTINATION_CONFLICT');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_DEGRADED');
+    });
+  });
+
+  // Stage 1A.3: Confidence-Aware Physical Anomaly Handling (Scenarios 1-7)
+  describe('Stage 1A.3: Confidence-Aware Physical Anomaly Handling (Scenarios 1-7)', () => {
+    it('Scenario 1: COMPARABLE + MATRIX_STRUCTURAL_DIFFERENCE -> SUSPICIOUS, MANUAL_INSPECTION_RECOMMENDED', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'COMPARABLE',
+        alignmentClassification: 'GOOD',
+        alignmentQuality: 0.85,
+        matrixMismatchRatio: 0.432,
+        visualDeviationIndex: 0.32,
+        anomalyIndicators: ['MATRIX_STRUCTURAL_DIFFERENCE'],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('SUSPICIOUS');
+      expect(result.recommendation).toBe('MANUAL_INSPECTION_RECOMMENDED');
+      expect(result.riskFactors).toContain('MATRIX_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('TAMPER_ANALYSIS_DEGRADED');
+    });
+
+    it('Scenario 2: DEGRADED + MATRIX_STRUCTURAL_DIFFERENCE -> VERIFIED, CAPTURE_CLEARER_IMAGE, degraded risk factors', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'DEGRADED',
+        alignmentClassification: 'DEGRADED',
+        alignmentQuality: 0.58,
+        matrixMismatchRatio: 0.432,
+        visualDeviationIndex: 0.32,
+        anomalyIndicators: ['ALIGNMENT_DEGRADED', 'MATRIX_STRUCTURAL_DIFFERENCE'],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      // Must NOT be SUSPICIOUS because comparison alignment is degraded
+      expect(result.status).toBe('VERIFIED');
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      // Machine-readable degraded indicators emitted instead of high-confidence fraud factors
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_DEGRADED');
+      expect(result.riskFactors).toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('MATRIX_STRUCTURAL_DIFFERENCE');
+      // Raw anomaly indicators preserved in evidence
+      expect(result.evidence.tamper?.anomalyIndicators).toContain(
+        'MATRIX_STRUCTURAL_DIFFERENCE',
+      );
+    });
+
+    it('Scenario 3: DEGRADED + BOUNDARY anomaly -> VERIFIED, CAPTURE_CLEARER_IMAGE, degraded risk factors', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'DEGRADED',
+        alignmentClassification: 'DEGRADED',
+        alignmentQuality: 0.6,
+        boundaryAnomalyDetected: true,
+        boundaryAnomalyScore: 0.42,
+        anomalyIndicators: ['ALIGNMENT_DEGRADED', 'BOUNDARY_EDGE_ANOMALY'],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('VERIFIED');
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_DEGRADED');
+      expect(result.riskFactors).toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('BOUNDARY_EDGE_ANOMALY');
+      expect(result.evidence.tamper?.boundaryAnomalyDetected).toBe(true);
+    });
+
+    it('Scenario 4: DEGRADED + no anomaly -> VERIFIED, CAPTURE_CLEARER_IMAGE, no potential difference factor', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'DEGRADED',
+        alignmentClassification: 'DEGRADED',
+        alignmentQuality: 0.62,
+        matrixMismatchRatio: 0.02,
+        visualDeviationIndex: 0.05,
+        boundaryAnomalyDetected: false,
+        anomalyIndicators: ['ALIGNMENT_DEGRADED'],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('VERIFIED');
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_DEGRADED');
+      expect(result.riskFactors).not.toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('MATRIX_STRUCTURAL_DIFFERENCE');
+    });
+
+    it('Scenario 5: INCONCLUSIVE + structural indicators -> INSUFFICIENT_EVIDENCE, CAPTURE_CLEARER_IMAGE', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'INCONCLUSIVE',
+        alignmentClassification: 'INSUFFICIENT',
+        alignmentQuality: 0.22,
+        matrixMismatchRatio: 0.45,
+        boundaryAnomalyDetected: true,
+        anomalyIndicators: [
+          'ALIGNMENT_INSUFFICIENT',
+          'LOW_COMPARABILITY',
+          'MATRIX_STRUCTURAL_DIFFERENCE',
+        ],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('INSUFFICIENT_EVIDENCE');
+      expect(result.recommendation).toBe('CAPTURE_CLEARER_IMAGE');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_INCONCLUSIVE');
+      expect(result.riskFactors).not.toContain('MATRIX_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('BOUNDARY_EDGE_ANOMALY');
+      expect(result.riskFactors).not.toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+    });
+
+    it('Scenario 6: COMPARABLE + clean baseline -> VERIFIED, REVIEW_NOT_REQUIRED, no tamper risk factors', () => {
+      const dest = createMockDestinationResult({
+        status: 'VERIFIED',
+        destinationMatch: true,
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'COMPARABLE',
+        alignmentClassification: 'GOOD',
+        alignmentQuality: 0.94,
+        matrixMismatchRatio: 0.005,
+        visualDeviationIndex: 0.01,
+        boundaryAnomalyDetected: false,
+        anomalyIndicators: [],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('VERIFIED');
+      expect(result.recommendation).toBe('REVIEW_NOT_REQUIRED');
+      expect(result.riskFactors).toHaveLength(0);
+      expect(result.evidence.tamper?.analysisQuality).toBe('COMPARABLE');
+    });
+
+    it('Scenario 7: Destination mismatch + degraded physical comparison -> DESTINATION_MISMATCH & DO_NOT_PROCEED_WITH_PAYMENT', () => {
+      const dest = createMockDestinationResult({
+        status: 'DESTINATION_MISMATCH',
+        destinationMatch: false,
+        scannedDestination: 'attacker@axis',
+        matchedDestination: 'merchant@icici',
+      });
+      const quality = createMockImageQualityResult({ overallQuality: 'ACCEPTABLE' });
+      const tamper = createMockTamperResult({
+        analysisQuality: 'DEGRADED',
+        alignmentClassification: 'DEGRADED',
+        alignmentQuality: 0.55,
+        matrixMismatchRatio: 0.35,
+        anomalyIndicators: ['ALIGNMENT_DEGRADED', 'MATRIX_STRUCTURAL_DIFFERENCE'],
+      });
+
+      const result = composeVerificationResult(dest, quality, tamper);
+
+      expect(result.status).toBe('DESTINATION_MISMATCH');
+      expect(result.recommendation).toBe('DO_NOT_PROCEED_WITH_PAYMENT');
+      expect(result.destinationMatch).toBe(false);
+      expect(result.riskFactors).toContain('DESTINATION_CONFLICT');
+      expect(result.riskFactors).toContain('TAMPER_ANALYSIS_DEGRADED');
+      expect(result.riskFactors).toContain('POTENTIAL_STRUCTURAL_DIFFERENCE');
+      expect(result.riskFactors).not.toContain('MATRIX_STRUCTURAL_DIFFERENCE');
     });
   });
 
